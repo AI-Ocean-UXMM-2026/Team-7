@@ -586,6 +586,14 @@ img {
   font-weight: 800;
   letter-spacing: 0.07em;
 }
+.preview-badge-live {
+  color: #0a6c54;
+  background: #e3f8ef;
+}
+.preview-badge-simulation {
+  color: #76520d;
+  background: #fff3d9;
+}
 .fixture-note {
   margin-bottom: 12px;
   padding: 9px 10px;
@@ -593,6 +601,112 @@ img {
   color: #64480e;
   background: #fff7e7;
   font-size: 0.66rem;
+  line-height: 1.5;
+}
+.missing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 12px;
+  padding: 10px 11px;
+  color: #654b13;
+  border: 1px solid #f2d69d;
+  border-radius: 11px;
+  background: #fff8e9;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+.missing-card strong {
+  font-size: 0.73rem;
+}
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.field-source {
+  flex-shrink: 0;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.field-source-extracted {
+  color: #235b58;
+  background: #e0f6f0;
+}
+.field-source-manual {
+  color: #244e9f;
+  background: #eaf0ff;
+}
+.field-source-missing {
+  color: #75510c;
+  background: #fff0ce;
+}
+.items-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--ocean-text);
+  font-size: 0.77rem;
+}
+.text-button {
+  min-height: 32px;
+  padding: 5px 7px;
+  color: var(--ocean-navy);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+.text-button:hover {
+  background: #eaf2ff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.danger-text {
+  color: #a54848;
+}
+.draft-items {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 8px;
+}
+.draft-item {
+  padding: 11px;
+  border: 1px solid #d7e4f0;
+  border-radius: 12px;
+  background: #fafdff;
+}
+.draft-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: #426189;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.item-fields {
+  margin-top: 8px;
+}
+.totals-fields {
+  margin-top: 12px;
+}
+.total-breakdown {
+  margin-top: 5px;
+  color: var(--ocean-muted);
+  font-size: 0.64rem;
   line-height: 1.5;
 }
 .field-grid {

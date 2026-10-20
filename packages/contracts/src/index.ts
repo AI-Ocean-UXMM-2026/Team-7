@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { calculateOrderTotals } from "@ocean/core";
+export { calculateOrderTotals } from "@ocean/core";
+export { summarizeFinancials, financialTrend, expenseBreakdown, totalExpenseAmount, myanmarDate, shiftDate, validRange } from "@ocean/core";
+export type { DateRange, FinancialData, PaymentRecord } from "@ocean/core";
 
 export const uuidSchema = z.uuid();
 export const timestampSchema = z.iso.datetime({ offset: true });
@@ -95,9 +99,23 @@ export const expenseSchema = z.object({
   updated_at: timestampSchema,
 });
 
+export const expenseCategories = ["Product costs", "Packaging", "Delivery", "Marketing", "Other"] as const;
+export const expenseInputSchema = expenseSchema.pick({ description: true, amount_mmk: true, expense_date: true, notes: true }).extend({
+  category: z.enum(expenseCategories),
+}).strict();
+export type ExpenseInput = z.infer<typeof expenseInputSchema>;
+
 export const signInSchema = z.object({
-  email: z.email().trim().max(254),
+  email: z.string().trim().pipe(z.email().max(254)),
   password: z.string().min(8).max(128),
+});
+
+export const recoveryEmailSchema = signInSchema.pick({ email: true });
+export const resetPasswordSchema = z.object({
+  password: z.string().min(8).max(128),
+  confirmation: z.string(),
+}).refine((value) => value.password === value.confirmation, {
+  message: "Passwords must match.", path: ["confirmation"],
 });
 
 export const signUpSchema = signInSchema.extend({
@@ -119,3 +137,77 @@ export type FulfillmentStatus = z.infer<typeof fulfillmentStatusSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type OrderItem = z.infer<typeof orderItemSchema>;
 export type Expense = z.infer<typeof expenseSchema>;
+
+export const orderLineInputSchema = orderItemSchema.pick({
+  product_name: true, quantity: true, unit_price_mmk: true,
+}).extend({
+  quantity: orderItemSchema.shape.quantity.max(1000000),
+  unit_price_mmk: mmkSchema.max(9007199254),
+}).strict();
+
+export const saveOrderSchema = z.object({
+  shop_id: uuidSchema,
+  id: uuidSchema,
+  expected_updated_at: timestampSchema.nullable(),
+  customer_name: customerSchema.shape.name,
+  customer_phone: customerSchema.shape.phone,
+  delivery_address: orderSchema.shape.delivery_address,
+  notes: orderSchema.shape.notes,
+  order_status: orderStatusSchema,
+  fulfillment_status: fulfillmentStatusSchema,
+  delivery_fee_mmk: mmkSchema,
+  discount_mmk: mmkSchema,
+  items: z.array(orderLineInputSchema).min(1).max(100),
+}).strict().superRefine((value, ctx) => {
+  if (value.delivery_address?.trim() && !value.customer_phone?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["customer_phone"], message: "A phone number is required when a delivery address is provided." });
+  }
+  try { calculateOrderTotals(value.items, value.delivery_fee_mmk, value.discount_mmk); }
+  catch { ctx.addIssue({ code: "custom", path: ["discount_mmk"], message: "Check the amounts: use safe whole MMK and a discount no greater than subtotal plus delivery." }); }
+});
+
+export const orderDetailsSchema = orderSchema.extend({
+  customers: customerSchema.pick({ name: true, phone: true }).nullable(),
+  order_items: z.array(orderItemSchema),
+});
+export type SaveOrderInput = z.infer<typeof saveOrderSchema>;
+export type OrderDetails = z.infer<typeof orderDetailsSchema>;
+
+export {
+  chatOrderExtractionItemSchema,
+  chatOrderExtractionSchema,
+  chatOrderRequestSchema,
+  chatOrderResponseSchema,
+} from "./chat-to-order.ts";
+export type {
+  ChatOrderExtraction,
+  ChatOrderExtractionItem,
+  ChatOrderRequest,
+  ChatOrderResponse,
+} from "./chat-to-order.ts";
+
+export {
+  buildPaymentEvidenceSavePayload,
+  duplicateEvidenceWarningSchema,
+  paymentEvidenceReadbackSchema,
+  paymentEvidenceSaveSchema,
+  screenshotAnalyzeRequestSchema,
+  screenshotAnalyzeResponseSchema,
+  screenshotCandidateSchema,
+  screenshotExtractionSchema,
+  screenshotFulfillmentStatusSchema,
+  screenshotMatchRequestSchema,
+  screenshotMatchResponseSchema,
+  screenshotMimeSchema,
+  screenshotOrderStatusSchema,
+  screenshotPaymentStatusSchema,
+} from "./screenshot-to-order.ts";
+export type {
+  DuplicateEvidenceWarning,
+  PaymentEvidenceReadback,
+  PaymentEvidenceSave,
+  ScreenshotAnalyzeResponse,
+  ScreenshotCandidate,
+  ScreenshotExtraction,
+  ScreenshotMime,
+} from "./screenshot-to-order.ts";

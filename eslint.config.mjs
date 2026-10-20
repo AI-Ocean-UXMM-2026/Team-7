@@ -10,5 +10,5 @@ export default defineConfig([
     files: ["apps/desktop/src/renderer/**/*.{ts,tsx}"],
     rules: { "@next/next/no-img-element": "off" },
   },
-  globalIgnores(["**/.next/**", "**/out/**", "**/dist/**", "**/dist-electron/**", "**/next-env.d.ts"]),
+  globalIgnores([".agents/skills/**", "**/.next/**", "**/out/**", "**/dist/**", "**/dist-electron/**", "**/next-env.d.ts"]),
 ]);

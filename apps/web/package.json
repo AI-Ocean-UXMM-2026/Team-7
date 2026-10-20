@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test": "node --test src/lib/auth.test.ts src/lib/business/attention.test.ts src/lib/business/sample-provider.test.ts src/lib/ai/screenshot-scope.test.ts src/app/api/ai/chat-to-order/guard.test.ts src/app/api/ai/screenshot-to-order/image.test.ts src/app/assistant/draft-lock.test.ts",
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build --webpack",
     "start": "next start --hostname 127.0.0.1",
@@ -10,12 +11,15 @@
   },
   "dependencies": {
     "@ocean/contracts": "workspace:*",
+    "@ocean/core": "workspace:*",
     "@ocean/ui": "workspace:*",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.118.0",
     "next": "16.4.2",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-is": "19.3.1",
+    "recharts": "3.10.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",

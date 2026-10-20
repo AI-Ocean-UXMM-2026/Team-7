@@ -39,7 +39,8 @@ export default async function ShopWorkspacePage({
         <h1 id="shop-title">{shop.name}</h1>
         <div className="workspace-message">
           <strong>Your shop workspace is established.</strong>
-          <p>Business records are protected by shop membership policies. Order and finance screens will connect after the business data APIs are added.</p>
+          <p>Manage your shop’s orders with customer details, product lines, and separate order, payment, and fulfillment statuses.</p>
+          <Link href={`/sales?shop=${parsedId.data}`}>Open Sales Management</Link>
         </div>
         <Link className="auth-back" href="/">Return to sample dashboard</Link>
       </section>

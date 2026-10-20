@@ -11,9 +11,12 @@
     "build:preload": "vite build --config vite.preload.config.ts",
     "build": "pnpm build:main && pnpm build:preload && pnpm build:renderer",
     "start": "electron .",
+    "test": "node --test src/main/launcher-drag.test.ts src/main/hosted-assistant.test.ts src/main/navigation-guard.test.ts src/renderer/draft-identity.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "dependencies": {
+    "@ocean/contracts": "workspace:*",
+    "@ocean/core": "workspace:*",
     "@ocean/ui": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1",

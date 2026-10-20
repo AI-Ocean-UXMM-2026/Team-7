@@ -1,5 +1,110 @@
 # Milestone 2A.1 — Supabase Business Foundation
 
+## Completion pass — October 20, 2026
+
+This section supersedes earlier connectivity/history limitations below. Milestone
+2A.1 is still awaiting live user-flow and isolation verification, not complete.
+
+### Verified against the linked project
+
+- The read-only CLI history check succeeded. `20261020000000` is present locally
+  and remotely. No remote SQL or database mutation was executed in this pass.
+- The Auth settings endpoint returned HTTP 200: Google enabled, email enabled,
+  signup enabled. This verifies configuration/connectivity, not successful login.
+- Browser-tested Google initiation reached Google, which rejected the request
+  with `400: redirect_uri_mismatch`. Its error-details dialog identifies the
+  rejected URI as `https://pzirbuiwunrbfdzoeaal.supabase.co/auth/v1/callback`.
+  Add that exact URI to the Authorized redirect URIs of the Google Web OAuth
+  client configured in Supabase, then retry. No Google settings were modified.
+  This is the confirmed blocker to end-to-end Google login.
+- The ignored root environment had non-placeholder public configuration matching
+  the linked project, while `apps/web/.env.local` had placeholders. Copied only
+  the public URL and publishable key into the ignored web environment. Neither
+  credentials nor tokens were printed. Both environment files remain ignored.
+
+### Application changes
+
+- Added Google OAuth initiation using the SSR PKCE client and the existing
+  callback. OAuth redirects are restricted to the configured Supabase origin.
+- Added recovery request and authenticated password-reset forms. Recovery replies
+  avoid revealing whether an address is registered. Reset checks the current user,
+  validates matching passwords, updates through Supabase Auth, and signs out.
+- Callback accepts PKCE codes or supported email token hashes, handles provider
+  failure, strips callback secrets by redirecting to a fixed destination, and
+  only permits the workspace or password-reset destination. Redirect origin comes
+  from trusted application configuration, not request host headers.
+- Added placeholder/public-key configuration guards, including rejection of
+  `sb_secret_` keys. Added callback-origin/redirect tests and recovery schema tests.
+- A single existing membership goes directly to its shop. Additional-shop UI was
+  removed; pre-existing multiple memberships are preserved without deletion.
+- Prepared `20261020010000_single_shop_onboarding.sql`, which remains PENDING.
+  It makes first-shop creation idempotent and serializes concurrent submissions
+  with a per-user transaction lock. Existing membership returns its shop. The
+  function checks authentication, has an empty search path, uses restricted grants,
+  and creates an owner membership atomically when none exists. It has no DROP,
+  TRUNCATE, DELETE, table changes, or updates to existing business rows. Existing
+  historical multiple shops are preserved. Applying it requires explicit approval.
+- Extended pgTAP checks for repeat onboarding, owner membership creation, and
+  prevention of direct membership grants. These require both local migrations.
+
+### Local Auth configuration / next verification
+
+The existing dev process runs at `http://127.0.0.1:3002`; local
+`NEXT_PUBLIC_APP_URL` now matches that origin. Do not test the stale 3000/3001
+instances as evidence for the updated application. Open:
+
+`http://127.0.0.1:3002/login`
+
+In Supabase Auth URL Configuration, use the intended application origin as Site
+URL and allow these local redirect URLs (replace the port consistently if changed):
+
+- `http://127.0.0.1:3002/auth/confirm`
+- `http://127.0.0.1:3002/auth/confirm?next=/login/reset-password`
+
+Google's authorized redirect is the Supabase provider callback,
+`https://<project-ref>.supabase.co/auth/v1/callback`, not the Next.js callback.
+Do not change provider credentials or disable email confirmation for testing.
+
+For email token-hash templates compatible with the implemented callback:
+
+- Confirm signup: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
+- Reset password: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`
+
+These are dashboard instructions only; hosted settings/templates have not been
+changed by this pass. PKCE email links must be opened in the initiating browser.
+
+Remaining live acceptance steps:
+
+1. User completes Google sign-in, callback, refresh/session persistence and sign-out.
+2. Verify email signup/confirmation/login and password recovery with user-entered
+   credentials; never paste passwords or recovery links into chat.
+3. After approval, apply only the pending one-shop migration, repeat history check,
+   create a shop, and confirm repeated onboarding returns the same shop.
+4. Use two independent test accounts to verify cross-shop reads/writes fail for
+   customers, orders/items and expenses, and membership/payment-status writes fail.
+5. Execute the 21 pgTAP checks against a local Supabase stack when Docker is
+   available. Local tests do not replace hosted isolation checks.
+
+Website sample screens and Electron remain unchanged. No Milestone 2A.2 work,
+production transactions, commits, or pushes are included.
+
+### Checks in the completion pass
+
+- `pnpm lint`: passed, zero warnings.
+- `pnpm --filter @ocean/web test`: passed, 3 auth security/configuration tests.
+  Node emits a module-type inference warning for the TypeScript test file.
+- `pnpm --filter @ocean/contracts test`: passed, 4 schema tests.
+- `pnpm typecheck`: passed, including web, desktop and shared workspaces.
+- `pnpm build`: passed after retrying with filesystem access; the first attempt
+  was blocked by an EPERM when creating generated Next.js output.
+- Browser: sign-in/Google button and recovery page rendered; OAuth initiation
+  reached Google's explicit mismatch error. No completed Google session claimed.
+- `git diff --check`: passed; Git emitted CRLF normalization notices.
+- Docker is unavailable, so pgTAP was not executed. The new migration has been
+  reviewed but not SQL-executed; concurrency behavior remains untested.
+- No dependency additions, SQL execution, remote migrations, auth admin changes,
+  test account creation or hosted business writes occurred.
+
 ## Delivered
 
 - Added pinned `@supabase/ssr` and `@supabase/supabase-js` dependencies to the

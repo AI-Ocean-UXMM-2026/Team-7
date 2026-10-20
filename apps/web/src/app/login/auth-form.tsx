@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { signInAction, signUpAction } from "./actions";
+import { googleSignInAction, signInAction, signUpAction } from "./actions";
 
-export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
+export function AuthForm({ mode, notice, next = "/workspace", showGoogle = true, showRecovery = true, showSignUp = true, showBack = true }: { mode: "sign-in" | "sign-up"; notice?: string; next?: string; showGoogle?: boolean; showRecovery?: boolean; showSignUp?: boolean; showBack?: boolean }) {
   const action = mode === "sign-in" ? signInAction : signUpAction;
   const [state, formAction, pending] = useActionState(action, undefined);
 
@@ -16,7 +16,14 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
         <p className="auth-description">
           Sign in to your private workspace or create an account to set up a shop.
         </p>
+        {notice && <p className="auth-message" role="status">{notice}</p>}
+        {showGoogle && <form action={googleSignInAction}>
+          <input type="hidden" name="next" value={next}/>
+          <button className="auth-submit" type="submit">Continue with Google</button>
+        </form>}
+        {showGoogle && <p className="auth-description">Or continue with email and password</p>}
         <form action={formAction} className="auth-form">
+          <input type="hidden" name="next" value={next}/>
           {mode === "sign-up" && (
             <label>
               Your name
@@ -44,13 +51,14 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
             {pending ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}
           </button>
         </form>
-        <p className="auth-switch">
+        {showRecovery && mode === "sign-in" && <Link className="auth-back" href="/login/forgot-password">Forgot password?</Link>}
+        {showSignUp && <p className="auth-switch">
           {mode === "sign-in" ? "New to SaleSayar AI? " : "Already have an account? "}
-          <Link href={mode === "sign-in" ? "/login/signup" : "/login"}>
+          <Link href={`${mode === "sign-in" ? "/login/signup" : "/login"}?${new URLSearchParams({ next })}`}>
             {mode === "sign-in" ? "Create an account" : "Sign in"}
           </Link>
-        </p>
-        <Link className="auth-back" href="/">Return to sample dashboard</Link>
+        </p>}
+        {showBack && <Link className="auth-back" href="/">Return to sample dashboard</Link>}
       </section>
     </main>
   );

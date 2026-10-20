@@ -18,24 +18,43 @@ export const launcherDragSchema = z
   })
   .strict();
 
-const orderSchema = z
-  .object({
-    customer: z.string().max(2_000),
-    product: z.string().max(2_000),
-    quantity: z.string().max(50),
-    price: z.string().max(50),
-    delivery: z.string().max(4_000),
-  })
-  .strict();
+const fieldSourceSchema = z.enum(["extracted", "missing", "manual"]);
+const draftItemSchema = z.object({
+  key: z.string().min(1).max(100),
+  product_name: z.string().max(200),
+  product_name_source: fieldSourceSchema,
+  quantity: z.string().max(50),
+  quantity_source: fieldSourceSchema,
+  unit_price_mmk: z.string().max(50),
+  unit_price_mmk_source: fieldSourceSchema,
+}).strict();
+
+const draftOrderSchema = z.object({
+  customer_name: z.string().max(160),
+  customer_name_source: fieldSourceSchema,
+  customer_phone: z.string().max(40),
+  customer_phone_source: fieldSourceSchema,
+  delivery_address: z.string().max(500),
+  delivery_address_source: fieldSourceSchema,
+  notes: z.string().max(4_000),
+  notes_source: fieldSourceSchema,
+  delivery_fee_mmk: z.string().max(50),
+  delivery_fee_mmk_source: fieldSourceSchema,
+  discount_mmk: z.string().max(50),
+  discount_mmk_source: fieldSourceSchema,
+  items: z.array(draftItemSchema).min(1).max(100),
+}).strict();
 
 export const assistantDraftFieldsSchema = z
   .object({
     view: z.enum(["home", "chat", "match"]),
     chat: z.string().max(200_000),
-    order: orderSchema,
+    order: draftOrderSchema,
     hasOrder: z.boolean(),
     confirmed: z.boolean(),
+    orderId: z.uuid().nullable(),
     notice: z.string().max(2_000),
+    extractionMode: z.enum(["live", "simulation"]),
   })
   .strict();
 

@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(21);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -38,6 +38,22 @@ select set_config(
 
 insert into public.customers (shop_id, name)
 values (current_setting('test.shop_a')::uuid, 'Customer A');
+select is(
+  public.create_shop_for_current_user('Repeated setup'),
+  current_setting('test.shop_a')::uuid,
+  'repeated onboarding returns the existing shop'
+);
+select is(
+  (select role::text from public.shop_memberships where shop_id = current_setting('test.shop_a')::uuid),
+  'owner'::text,
+  'first-shop creation grants the current seller owner membership'
+);
+select throws_ok(
+  $$insert into public.shop_memberships (shop_id, user_id, role)
+    values (current_setting('test.shop_a')::uuid, '20000000-0000-4000-8000-000000000002', 'owner')$$,
+  '42501', null,
+  'members cannot grant another account membership'
+);
 insert into public.expenses (shop_id, description, amount_mmk, category)
 values (current_setting('test.shop_a')::uuid, 'Test expense', 1000, 'supplies');
 

@@ -17,6 +17,8 @@ import {
   type AssistantDraft,
 } from "./contract.js";
 import { LauncherDragSession } from "./launcher-drag.js";
+import { resolveHostedAssistantUrl } from "./hosted-assistant.js";
+import { attachNavigationGuards } from "./navigation-guard.js";
 
 const isDevelopment = app.commandLine.hasSwitch("dev");
 const devUrl = "http://127.0.0.1:5173";
@@ -34,26 +36,24 @@ function preloadPath() {
   return join(__dirname, "preload.cjs");
 }
 
-function addNavigationGuard(window: BrowserWindow) {
+function addNavigationGuard(window: BrowserWindow, mode: "local" | "hosted", hostedUrl?: string) {
   const packagedRenderer = pathToFileURL(
     join(__dirname, "../dist/index.html"),
   ).href;
 
-  window.webContents.on("will-navigate", (event, targetUrl) => {
-    const isAllowed = isDevelopment
-      ? new URL(targetUrl).origin === devUrl
-      : targetUrl === packagedRenderer ||
-        targetUrl.startsWith(`${packagedRenderer}#`);
-
-    if (!isAllowed) event.preventDefault();
+  attachNavigationGuards(window.webContents as unknown as Parameters<typeof attachNavigationGuards>[0], {
+    mode,
+    hostedUrl,
+    isDevelopment,
+    devUrl,
+    packagedRenderer,
   });
-
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 }
 
 function createWindow(
   url: string,
   options: Electron.BrowserWindowConstructorOptions,
+  mode: "local" | "hosted" = "local",
 ) {
   const window = new BrowserWindow({
     backgroundColor: "#00000000",
@@ -62,7 +62,8 @@ function createWindow(
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: preloadPath(),
+      ...(mode === "local" ? { preload: preloadPath() } : {}),
+      ...(mode === "hosted" ? { partition: "persist:salesayar-assistant" } : {}),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -73,7 +74,7 @@ function createWindow(
     ...options,
   });
 
-  addNavigationGuard(window);
+  addNavigationGuard(window, mode, mode === "hosted" ? url : undefined);
   void window.loadURL(url);
   return window;
 }
@@ -86,10 +87,13 @@ function launcherUrl() {
   return url;
 }
 
-function panelUrl() {
-  return isDevelopment
-    ? `${devUrl}/`
-    : pathToFileURL(join(__dirname, "../dist/index.html")).href;
+function panelConfig() {
+  const hosted = resolveHostedAssistantUrl(process.env.SALESAYAR_ASSISTANT_URL);
+  if (hosted) return { url: hosted, mode: "hosted" as const };
+  return {
+    url: isDevelopment ? `${devUrl}/` : pathToFileURL(join(__dirname, "../dist/index.html")).href,
+    mode: "local" as const,
+  };
 }
 
 function createLauncher() {
@@ -156,8 +160,9 @@ function placePanel() {
 }
 
 function showPanel() {
+  const config = panelConfig();
   if (!panel || panel.isDestroyed()) {
-    panel = createWindow(panelUrl(), {
+    panel = createWindow(config.url, {
       width: panelWidth,
       height: panelHeight,
       minWidth: 370,
@@ -168,9 +173,9 @@ function showPanel() {
       movable: true,
       skipTaskbar: true,
       alwaysOnTop: true,
-      title: "SaleSayar AI Assistant · Sample workspace",
+      title: config.mode === "hosted" ? "SaleSayar AI Assistant · Hosted workspace" : "SaleSayar AI Assistant · Offline simulation",
       type: "toolbar",
-    });
+    }, config.mode);
     panel.setAlwaysOnTop(true, "floating");
     panel.on("close", (event) => {
       event.preventDefault();
@@ -253,10 +258,34 @@ ipcMain.on(ipcChannels.saveDraftScreenshot, (event, payload: unknown) => {
     fields: assistantDraft?.fields ?? {
       view: "home",
       chat: "",
-      order: { customer: "", product: "", quantity: "", price: "", delivery: "" },
+      order: {
+        customer_name: "",
+        customer_name_source: "missing",
+        customer_phone: "",
+        customer_phone_source: "missing",
+        delivery_address: "",
+        delivery_address_source: "missing",
+        notes: "",
+        notes_source: "missing",
+        delivery_fee_mmk: "",
+        delivery_fee_mmk_source: "missing",
+        discount_mmk: "",
+        discount_mmk_source: "missing",
+        items: [{
+          key: "initial",
+          product_name: "",
+          product_name_source: "missing",
+          quantity: "",
+          quantity_source: "missing",
+          unit_price_mmk: "",
+          unit_price_mmk_source: "missing",
+        }],
+      },
       hasOrder: false,
       confirmed: false,
+      orderId: null,
       notice: "",
+      extractionMode: "simulation",
     },
     screenshot: result.data.screenshot,
   };
