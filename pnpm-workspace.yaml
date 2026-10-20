@@ -4,6 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  supabase: true
   unrs-resolver: true
 
 minimumReleaseAgeExclude:

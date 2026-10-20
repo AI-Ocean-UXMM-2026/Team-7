@@ -57,12 +57,11 @@ All displayed financial figures and profile details are synthetic and labeled.
 
 ### Current limits
 
-This is a UI foundation: no authentication, backend writes, AI extraction, payment
-workflows, voucher generation, financial calculations, chart filtering, Excel export,
-Supabase tables/migrations, or production Electron integration. Settings are read-only. Language
-switching and first-session onboarding are deferred. Typography uses local system
-fonts with Burmese-capable fallbacks; no remote font request is required at build
-or runtime. Full Burmese translation and bundled fonts remain future work.
+The website still shows clearly marked synthetic dashboard, sales, finance, and
+settings content. Live order, expense, voucher, AI, and payment workflows are not
+connected. The seller sign-in and shop workspace foundation is documented in
+`docs/MILESTONE_2A_1.md`; it requires the versioned migration to be applied to a
+configured Supabase project before workspace onboarding is available.
 
 ## Milestone 1C: Presentation prototype
 
@@ -91,6 +90,19 @@ website and desktop commands in separate PowerShell terminals.
 Turbopack CSS worker failed on this Windows environment. Development is unchanged;
 no additional bundler dependency is installed.
 
-Shared contracts and core packages intentionally contain no speculative business
-logic. The Supabase migration directory will be added with its implementation
-milestone. Keep all private credentials and `.env.local` untracked.
+Shared Zod entity contracts now live in `packages/contracts`. The Supabase
+migration and pgTAP shop-isolation test live under `supabase/`. The core package
+continues to have no speculative financial logic. Keep private credentials and
+`.env.local` untracked.
+
+## Milestone 2A.1: Supabase business foundation
+
+Install dependencies, configure `apps/web/.env.local` from the committed example,
+and follow the project linking, migration, and auth redirect steps in
+`docs/MILESTONE_2A_1.md`. Start the website with `pnpm dev`, then visit
+http://127.0.0.1:3000/login to sign in or create an account. The first-shop flow
+is at `/workspace` after authentication. No service-role key is needed by the
+website; never put one in a `NEXT_PUBLIC_` variable.
+
+Schema tests: `pnpm --filter @ocean/contracts test`. Database isolation tests
+require the Supabase CLI and its local Postgres stack; see the milestone handoff.

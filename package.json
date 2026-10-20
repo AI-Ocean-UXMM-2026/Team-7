@@ -21,6 +21,7 @@
     "@types/node": "26.6.5",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.2",
+    "supabase": "^2.121.0",
     "typescript": "5.9.3"
   }
 }

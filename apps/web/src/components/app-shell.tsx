@@ -32,6 +32,9 @@ const destinations: {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  if (pathname === "/login" || pathname.startsWith("/login/") || pathname.startsWith("/workspace")) {
+    return <>{children}</>;
+  }
   const active = (href: string) =>
     href === "/" ? pathname === href : pathname.startsWith(href);
 
@@ -100,6 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               EN <span lang="my">မြန်မာ</span>
             </span>
             <span className="workspace-tag">Sample workspace</span>
+            <Link className="account-link" href="/login">Sign in</Link>
             <span className="avatar" aria-label="Sample profile: May Thu">
               MT
             </span>
