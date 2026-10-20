@@ -1,0 +1,23 @@
+/* Approved working palette: docs/DESIGN_SYSTEM.md. */
+:root {
+  --ocean-background: #eaf5ff;
+  --ocean-background-secondary: #d8edff;
+  --ocean-navy: #172c78;
+  --ocean-primary: #3478f6;
+  --ocean-primary-strong: #245dd0;
+  --ocean-aqua: #37c9d9;
+  --ocean-text: #183153;
+  --ocean-card: #ffffff;
+  --ocean-success: #16a574;
+  --ocean-warning: #f2ae40;
+  --ocean-error: #e96565;
+  /* Darker foregrounds preserve text contrast on pale surfaces. */
+  --ocean-muted: #526780;
+  --ocean-success-text: #086645;
+  --ocean-warning-text: #80500d;
+  --ocean-border: #d8e5f2;
+  --ocean-radius: 1.5rem;
+  --ocean-shadow: 0 8px 28px rgb(23 44 120 / 5%);
+  --ocean-font:
+    "Inter", "Segoe UI", "Noto Sans Myanmar", "Myanmar Text", sans-serif;
+}

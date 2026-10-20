@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="468" viewBox="0 0 720 468">
+  <rect width="720" height="468" rx="28" fill="#eaf5ff"/>
+  <rect x="22" y="22" width="676" height="424" rx="23" fill="#fff" stroke="#d8e5f2" stroke-width="2"/>
+  <path d="M22 45c0-12.7 10.3-23 23-23h630c12.7 0 23 10.3 23 23v70H22z" fill="#172c78"/>
+  <circle cx="75" cy="67" r="23" fill="#37c9d9"/>
+  <path d="m68 55 15 12-15 12" fill="none" stroke="#172c78" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="119" y="69" fill="#fff" font-family="Arial,sans-serif" font-size="25" font-weight="700">SAMPLE WALLET TRANSFER</text>
+  <text x="119" y="93" fill="#c7e7f3" font-family="Arial,sans-serif" font-size="14" letter-spacing="2">ILLUSTRATION — NO TRANSACTION</text>
+  <rect x="70" y="140" width="580" height="235" rx="18" fill="#f4faff"/>
+  <text x="103" y="184" fill="#526780" font-family="Arial,sans-serif" font-size="16" letter-spacing="2">SAMPLE REFERENCE</text>
+  <text x="103" y="220" fill="#183153" font-family="Arial,sans-serif" font-size="22" font-weight="700">SAMPLE-1048</text>
+  <text x="103" y="277" fill="#526780" font-family="Arial,sans-serif" font-size="16" letter-spacing="2">ILLUSTRATIVE AMOUNT</text>
+  <text x="103" y="324" fill="#172c78" font-family="Arial,sans-serif" font-size="38" font-weight="700">45,000 MMK</text>
+  <rect x="462" y="253" width="143" height="48" rx="14" fill="#d8edff"/>
+  <text x="499" y="284" fill="#172c78" font-family="Arial,sans-serif" font-size="17" font-weight="700">SAMPLE</text>
+  <text x="70" y="409" fill="#526780" font-family="Arial,sans-serif" font-size="14">Synthetic preview image · Not issued by a bank or wallet</text>
+</svg>

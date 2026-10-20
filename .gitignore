@@ -147,3 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Private credentials (dotenv patterns above also cover apps/*/.env.local)
+*.pem
+*.key
+credentials*.json
+service-account*.json
+# Electron main/preload bundles and distributables
+**/dist-electron/
+**/release/
