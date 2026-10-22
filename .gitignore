@@ -167,3 +167,5 @@ scratch/
 .codex-build/
 .codex-output/
 agent/
+.vercel
+.env*
