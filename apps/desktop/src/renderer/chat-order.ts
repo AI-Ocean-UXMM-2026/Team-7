@@ -54,11 +54,11 @@ export function editableOrderFromExtraction(extraction: ChatOrderExtraction): Ed
     delivery_address: text(parsed.delivery_address),
     delivery_address_source: source(parsed.delivery_address),
     notes: text(parsed.notes),
-    notes_source: source(parsed.notes),
-    delivery_fee_mmk: amount(parsed.delivery_fee_mmk),
-    delivery_fee_mmk_source: parsed.delivery_fee_mmk === null ? "missing" : "extracted",
-    discount_mmk: amount(parsed.discount_mmk),
-    discount_mmk_source: parsed.discount_mmk === null ? "missing" : "extracted",
+    notes_source: parsed.notes ? "extracted" : "manual",
+    delivery_fee_mmk: amount(parsed.delivery_fee_mmk) || "0",
+    delivery_fee_mmk_source: parsed.delivery_fee_mmk !== null ? "extracted" : "manual",
+    discount_mmk: amount(parsed.discount_mmk) || "0",
+    discount_mmk_source: parsed.discount_mmk !== null ? "extracted" : "manual",
     items: parsed.items.map(itemFromExtraction),
   };
 }
@@ -69,8 +69,8 @@ export function emptyEditableOrder(): EditableChatOrder {
     customer_phone: null,
     delivery_address: null,
     notes: null,
-    delivery_fee_mmk: null,
-    discount_mmk: null,
+    delivery_fee_mmk: 0,
+    discount_mmk: 0,
     items: [{ product_name: null, quantity: null, unit_price_mmk: null }],
     missing_fields: [],
   });
@@ -82,14 +82,19 @@ function integer(value: string) {
   return Number.isSafeInteger(result) ? result : null;
 }
 
+function parseOptionalInt(value: string | null | undefined, defaultValue = 0): number | null {
+  if (!value || !value.trim()) return defaultValue;
+  return integer(value);
+}
+
 export function draftTotals(order: EditableChatOrder): DraftTotals {
   const items = order.items.map((item) => ({
     quantity: integer(item.quantity) ?? -1,
     unit_price_mmk: integer(item.unit_price_mmk) ?? -1,
   }));
-  const delivery = integer(order.delivery_fee_mmk);
-  const discount = integer(order.discount_mmk);
-  if (delivery === null || discount === null || items.some((item) => item.quantity < 1 || item.unit_price_mmk < 0)) {
+  const delivery = parseOptionalInt(order.delivery_fee_mmk, 0);
+  const discount = parseOptionalInt(order.discount_mmk, 0);
+  if (delivery === null || delivery < 0 || discount === null || discount < 0 || items.some((item) => item.quantity < 1 || item.unit_price_mmk < 0)) {
     return { subtotal_mmk: null, total_mmk: null };
   }
   try {
@@ -110,8 +115,11 @@ export function validateEditableOrder(order: EditableChatOrder) {
     if (quantity === null || quantity < 1) errors.push(`items.${index}.quantity`);
     if (price === null || price < 0) errors.push(`items.${index}.unit_price_mmk`);
   });
-  if (integer(order.delivery_fee_mmk) === null || integer(order.delivery_fee_mmk)! < 0) errors.push("delivery_fee_mmk");
-  if (integer(order.discount_mmk) === null || integer(order.discount_mmk)! < 0) errors.push("discount_mmk");
+  // Delivery fee and discount are optional fields (default 0). Only flag as error if user entered non-numeric or negative
+  const delivery = parseOptionalInt(order.delivery_fee_mmk, 0);
+  if (delivery === null || delivery < 0) errors.push("delivery_fee_mmk");
+  const discount = parseOptionalInt(order.discount_mmk, 0);
+  if (discount === null || discount < 0) errors.push("discount_mmk");
   if (draftTotals(order).total_mmk === null) errors.push("totals");
   return [...new Set(errors)];
 }

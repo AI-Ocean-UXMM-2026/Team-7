@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers.js";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { authDestination, getAppUrl } from "@/lib/auth";
+import { authDestination, getAppUrl, shopDestination } from "@/lib/auth";
 import { createSessionCookie, SESSION_COOKIE } from "@/lib/auth/session";
 import { ensureLocalProfile, type LocalAuthUser } from "@/lib/auth/local-profile";
 
@@ -11,9 +12,15 @@ export async function GET(request: NextRequest) {
   const type = request.nextUrl.searchParams.get("type");
   const errorParam = request.nextUrl.searchParams.get("error");
   const errorDesc = request.nextUrl.searchParams.get("error_description");
-  const hostOrigin = request.nextUrl.origin && !request.nextUrl.origin.includes("invalid")
-    ? request.nextUrl.origin
-    : undefined;
+  const hostHeader = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  const protoHeader =
+    request.headers.get("x-forwarded-proto") ||
+    (hostHeader?.includes("localhost") || hostHeader?.includes("127.0.0.1") ? "http" : "https");
+  const hostOrigin = hostHeader
+    ? `${protoHeader}://${hostHeader}`
+    : request.nextUrl.origin && !request.nextUrl.origin.includes("invalid")
+      ? request.nextUrl.origin
+      : undefined;
   const origin = getAppUrl(hostOrigin);
   const next = authDestination(request.nextUrl.searchParams.get("next"));
   const failure = (reason?: string) =>
@@ -51,8 +58,22 @@ export async function GET(request: NextRequest) {
       email: user.email ?? undefined,
       displayName,
     });
-    const targetPath = next === "/workspace" ? `/?shop=${shopId}` : next;
+    const targetPath = (next === "/workspace" || next === "/")
+      ? `/?shop=${shopId}&source=live`
+      : shopDestination(next, shopId);
     const response = NextResponse.redirect(new URL(targetPath, origin));
+
+    // Propagate all cookies (including Supabase auth tokens) from the server cookie store
+    try {
+      const cookieStore = await cookies();
+      for (const cookie of cookieStore.getAll()) {
+        response.cookies.set(cookie.name, cookie.value);
+      }
+    } catch {
+      // Non-critical cookie synchronization
+    }
+
+    // Set signed session cookie with explicit secure flag matching connection protocol
     response.cookies.set(SESSION_COOKIE, sessionToken, {
       path: "/",
       httpOnly: true,

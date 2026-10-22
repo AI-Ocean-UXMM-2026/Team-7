@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld("assistant", {
   rematchPayment: (input: unknown) => ipcRenderer.invoke(ipcChannels.rematchPayment, input),
   savePaymentEvidence: (input: unknown) => ipcRenderer.invoke(ipcChannels.savePaymentEvidence, input),
   receivingAccounts: (shopId: string) => ipcRenderer.invoke(ipcChannels.receivingAccounts, shopId),
+  saveOrder: (order: unknown) => ipcRenderer.invoke(ipcChannels.saveOrder, order),
+  getWebsiteUrl: () => ipcRenderer.invoke(ipcChannels.getWebsiteUrl),
+  setWebsiteUrl: (url: string) => ipcRenderer.invoke(ipcChannels.setWebsiteUrl, url),
+  reconnect: () => ipcRenderer.invoke(ipcChannels.reconnect),
+  getShopContext: () => ipcRenderer.invoke(ipcChannels.getShopContext),
+  setActiveShop: (shopId: string) => ipcRenderer.invoke(ipcChannels.setActiveShop, shopId),
   launcherDrag: (gesture: {
     phase: "start" | "move" | "end";
     pointerId: number;

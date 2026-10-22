@@ -1,108 +1,184 @@
-# ocean-ai-assistant
-AI-powered order and financial assistant for Myanmar online sellers. Built for Into the AI Ocean Buildathon.
-## Repository Status
+# SaleSayar AI · တူတူတွက်မယ်
 
-This is our team's private preparation repository for the UXMM Into the AI Ocean buildathon.
+> **From Chat to Order, From Order to Profit.**  
+> An AI-powered business and financial assistant tailored for Myanmar online sellers on Facebook and TikTok.  
+> Built for the **Into the AI Ocean Buildathon**, hosted by **UXMM**.
 
-It contains:
-- Product requirements and architecture planning
-- Design system and UX references
-- Dolphin mascot assets
-- Development guidelines for Codex
+---
 
-UXMM is expected to provide an official GitHub repository for the buildathon.
+## 🐬 Introduction
 
-When that repository is available, we will review its structure and submission requirements before transferring approved materials or starting official implementation.
+Myanmar's vibrant online shopping ecosystem runs on social chat platforms like Facebook Messenger and TikTok. Sellers juggle messy chat messages, manual phone-and-address tracking, delivery coordination, and mobile wallet payment slips (KBZPay, WavePay).
 
-Do not commit API keys, database passwords, `.env.local`, or other secrets.
+**SaleSayar AI (တူတူတွက်မယ်)** bridges customer conversations and business operations through two seamless, synchronized applications:
 
-The project name SaleSayar AI is temporary.
+1. **Web Workspace** — A comprehensive seller management portal for orders, vouchers, payments, expenses, and financial reporting.
+2. **Floating Dolphin Assistant** — A lightweight, transparent desktop companion that floats over Messenger and TikTok to extract orders, generate vouchers, and verify bank slips in seconds.
 
-## Milestone 1A: Web foundation
+---
 
-Requires Node.js 24.13+ and pnpm 11.25.0. From the repository root:
+## 📦 The Two Apps
+
+### 1. Web Workspace (`apps/web`)
+
+The central headquarters for online sellers, accessible from any web browser:
+
+- **Dashboard**: High-level financial overview, daily revenue, active order pipeline, and actionable attention alerts.
+- **Sales Management**:
+  - **Orders**: Full order lifecycle (Draft, Confirmed, Shipped, Delivered, Cancelled) with multi-item calculations.
+  - **Vouchers**: Professional, branded vouchers formatted in Burmese or English, ready for one-click print or PNG download.
+  - **Payments**: Audit trail of confirmed mobile payments and pending payment slip reviews.
+- **Finance Management**:
+  - **Expenses**: Categorized operational expenses (packaging, inventory, delivery, marketing).
+  - **Reports**: Profit & loss summaries and cash flow insights.
+- **Settings**: Receiving account setup (KBZPay, WavePay, AYA, CB Bank), multi-shop switching, and team access delegation.
+
+### 2. Floating Dolphin Assistant (`apps/desktop`)
+
+An Electron-powered floating desktop assistant with our friendly accountant dolphin:
+
+- **Chat to Order**:
+  - **📋 Paste from Clipboard**: Copy customer chats from Facebook Messenger or TikTok; AI extracts customer name, multiple phone numbers, delivery address, products, quantity, unit price, delivery fee, and notes.
+  - **✏️ Write Order**: Direct quick-write box to compose or append follow-up customer messages without extra navigation.
+  - **Instant Voucher Preview**: Clean SVG action bar (Edit, Save, Print) with single-language customer replies generated automatically based on customer language.
+- **Match Payment to Order**:
+  - Drag-and-drop or clipboard paste mobile banking transaction screenshots (KBZPay, WavePay).
+  - Vision AI extracts transaction reference numbers, amounts, and sender names, automatically matching them with pending customer orders.
+  - Seller-in-the-loop verification protects against forged receipts.
+- **Real-Time Workspace Sync**:
+  - Synchronizes seamlessly with your active shop account, whether running locally on your laptop (`http://127.0.0.1:3000`) or hosted on Vercel.
+
+---
+
+## 🚀 How to Run on Your Laptop
+
+### Prerequisites
+
+Ensure you have the following installed on your machine:
+- **Node.js**: `v22.0.0` or higher (certified on `v24.x`)
+- **pnpm**: `v11.25.0` or higher (`npm install -g pnpm`)
+- **Git**
+
+---
+
+### Step 1: Clone & Install Dependencies
 
 ```powershell
-pnpm install --frozen-lockfile
+# Clone the repository
+git clone https://github.com/AI-Ocean-UXMM-2026/Team-7.git
+cd ocean-ai-assistant
+
+# Install workspace dependencies
+pnpm install
+```
+
+---
+
+### Step 2: Environment Configuration
+
+Create a `.env.local` file in the root directory (or use `.env.example` as a template):
+
+```ini
+# Application URL
+NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
+
+# Session Secret (random 64-char hex)
+SESSION_SECRET=a8f4c92e1b7305d6849e21f7c35a09b8d4e6f21789c03b54a1d7e2f5b8c9a3d4
+
+# AI Vision & Chat (Gemini API)
+AI_API_KEY=your_gemini_api_key_here
+AI_CHAT_API_URL=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+AI_CHAT_MODEL=gemini-3.5-flash-lite
+
+AI_VISION_API_KEY=your_gemini_api_key_here
+AI_VISION_API_URL=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+AI_VISION_MODEL=gemini-3.5-flash-lite
+
+# Optional: Supabase Auth credentials (if using hosted Supabase auth)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+```
+
+*(Note: In local development, the app includes fallback simulation mode for testing AI extractions and demo stores without external keys.)*
+
+---
+
+### Step 3: Run the Web Workspace
+
+In your first terminal, start the Next.js development server:
+
+```powershell
 pnpm dev
 ```
 
-Open http://127.0.0.1:3000. No credentials or environment variables are needed.
+Open your browser and navigate to:
+👉 **[http://localhost:3000](http://localhost:3000)**
+
+You can sign in with your email or Google, create your shop, and explore the Dashboard and Sales Management.
+
+---
+
+### Step 4: Run the Floating Dolphin Assistant
+
+In a **second terminal**, build and launch the Electron floating assistant:
 
 ```powershell
-pnpm lint
-pnpm typecheck
-pnpm build
-pnpm start
-```
-
-`pnpm start` serves the production build after `pnpm build`. Both servers bind
-to the local machine by default.
-
-### Workspace structure
-
-- `apps/web`: Next.js App Router, React, strict TypeScript, Tailwind CSS.
-- `apps/desktop`: Windows Electron floating dolphin assistant; demo only.
-- `packages/ui`: shared UI primitives, icons, and ocean-blue CSS tokens.
-- `packages/contracts`: reserved shared contract module.
-- `packages/core`: reserved shared business-rule module.
-- `assets/dolphin`: unchanged official artwork, imported directly by the website.
-- `assets/design-references`: published Figma Make reference and inspection notes.
-
-The responsive shell includes a collapsible desktop sidebar, four-item mobile
-bottom navigation, Dashboard, Sales Management, Finance Management, and Settings.
-Sales and Finance section links select sample records/reports or clearly
-unconnected feature views through the URL.
-All displayed financial figures and profile details are synthetic and labeled.
-
-### Current limits
-
-The website still shows clearly marked synthetic dashboard, sales, finance, and
-settings content. Live order, expense, voucher, AI, and payment workflows are not
-connected. The seller sign-in and shop workspace foundation is documented in
-`docs/MILESTONE_2A_1.md`; it requires the versioned migration to be applied to a
-configured Supabase project before workspace onboarding is available.
-
-## Milestone 1C: Presentation prototype
-
-The approved ocean-blue interface now includes sample charts, order search/status
-filters, responsive tables, and polished read-only settings. The Good Morning
-banner and official dolphin PNGs are preserved. Data is illustrative; live AI,
-payment verification, voucher creation and backend writes are not connected.
-
-The Electron launcher drag fix was manually retested on Windows at 125% scaling.
-Movement supplies explicit fixed-size bounds to prevent native window growth.
-The assistant has two simulated flows, session draft restoration, and reduced-
-motion-friendly mascot reactions. See `docs/MILESTONE_1C.md` for evidence,
-changed files, validation, and remaining display/native checks.
-
-Build the desktop main/preload before starting it:
-
-```powershell
+# Build the desktop bundles
 pnpm desktop:build
+
+# Launch the floating assistant
 pnpm desktop:start
 ```
 
-For renderer development, run `pnpm desktop:dev` after a desktop build. Keep the
-website and desktop commands in separate PowerShell terminals.
+The small dolphin accountant will float on the edge of your screen. 
+- Click the dolphin to open the assistant panel.
+- Choose **Chat to Order** or **Match Payment to Order**.
+- Click **Open workspace ↗** or the bottom **🔄 Reconnect** button to link the floating assistant with your browser session.
 
-`pnpm build` uses Next.js's bundled Webpack production builder after the default
-Turbopack CSS worker failed on this Windows environment. Development is unchanged;
-no additional bundler dependency is installed.
+---
 
-Shared Zod entity contracts now live in `packages/contracts`. The Supabase
-migration and pgTAP shop-isolation test live under `supabase/`. The core package
-continues to have no speculative financial logic. Keep private credentials and
-`.env.local` untracked.
+## 🛠️ Testing & Quality Verification
 
-## Milestone 2A.1: Supabase business foundation
+Run our automated test suites covering authentication, business logic, payment verification, and security integrity:
 
-Install dependencies, configure `apps/web/.env.local` from the committed example,
-and follow the project linking, migration, and auth redirect steps in
-`docs/MILESTONE_2A_1.md`. Start the website with `pnpm dev`, then visit
-http://127.0.0.1:3000/login to sign in or create an account. The first-shop flow
-is at `/workspace` after authentication. No service-role key is needed by the
-website; never put one in a `NEXT_PUBLIC_` variable.
+```powershell
+# Run Web workspace unit & security tests (42 tests)
+pnpm --filter @ocean/web test
 
-Schema tests: `pnpm --filter @ocean/contracts test`. Database isolation tests
-require the Supabase CLI and its local Postgres stack; see the milestone handoff.
+# Run Desktop assistant unit tests (20 tests)
+pnpm --filter @ocean/desktop test
+
+# Run Core contracts & extraction tests (24 tests)
+pnpm --filter @ocean/core test
+
+# Typecheck the entire monorepo
+pnpm typecheck
+
+# Production build check
+pnpm build
+```
+
+---
+
+## 📂 Repository Monorepo Structure
+
+```text
+ocean-ai-assistant/
+├── apps/
+│   ├── web/               # Next.js 16 Web Workspace (App Router, Tailwind CSS, SSR)
+│   └── desktop/           # Electron Desktop Floating Dolphin Assistant (Vite, TS)
+├── packages/
+│   ├── contracts/         # Shared Zod validation schemas and TypeScript contracts
+│   ├── core/              # Shared pure business logic (calculations, reply generators)
+│   └── ui/                # Shared UI primitives, design tokens, and icons
+├── assets/
+│   └── dolphin/           # Official blue accountant dolphin illustrations & icons
+└── data/                  # Local SQLite database (salesayar.db)
+```
+
+---
+
+## 👥 Buildathon Team
+
+- **Team Name**: Team 7 (AI Ocean Buildathon, UXMM 2026)
+- **License**: Private & Proprietary

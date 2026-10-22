@@ -11,4 +11,10 @@ export const ipcChannels = {
   rematchPayment: "assistant:rematch-payment",
   savePaymentEvidence: "assistant:save-payment-evidence",
   receivingAccounts: "assistant:receiving-accounts",
+  saveOrder: "assistant:save-order",
+  getWebsiteUrl: "assistant:get-website-url",
+  setWebsiteUrl: "assistant:set-website-url",
+  reconnect: "assistant:reconnect",
+  getShopContext: "assistant:get-shop-context",
+  setActiveShop: "assistant:set-active-shop",
 } as const;

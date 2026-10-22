@@ -125,6 +125,21 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
   let targetShopId = requestedShopId;
 
   if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
+    try {
+      const cookieStore = await cookies();
+      const activeCookie = cookieStore.get("salesayar_active_shop")?.value;
+      if (activeCookie && uuidSchema.safeParse(activeCookie).success) {
+        const mem = verifyShopMembership(session.userId, activeCookie);
+        if (mem.authorized && mem.shop) {
+          targetShopId = activeCookie;
+        }
+      }
+    } catch {
+      // In contexts without cookie store, continue to fallback
+    }
+  }
+
+  if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
     const shops = getUserAuthorizedShops(session.userId);
     if (shops.length === 0) return null;
     targetShopId = shops[0]!.shop_id;

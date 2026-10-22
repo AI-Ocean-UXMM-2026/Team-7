@@ -16,7 +16,8 @@
     "desktop:package": "pnpm --filter @ocean/desktop package",
     "desktop:start": "pnpm --filter @ocean/desktop start",
     "lint": "eslint . --max-warnings 0",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
     "@types/node": "26.6.5",

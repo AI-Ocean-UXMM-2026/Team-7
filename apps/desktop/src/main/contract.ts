@@ -98,6 +98,21 @@ export type AssistantBridge = {
   rematchPayment: (input: { shop_id: string; extraction: ScreenshotExtraction; image_sha256: string | null }) => Promise<{ candidates: ScreenshotCandidate[]; duplicate_warnings: DuplicateEvidenceWarning[]; message: string }>;
   savePaymentEvidence: (input: { image: string; payload: PaymentEvidenceSave }) => Promise<{ evidence_id: string; revision: number; status: string; message: string }>;
   receivingAccounts: (shopId: string) => Promise<Array<{ id: string; provider: string; account_name: string; last_four: string }>>;
+  saveOrder: (order: {
+    id: string;
+    customer_name: string;
+    customer_phone?: string | null;
+    delivery_address?: string | null;
+    notes?: string | null;
+    delivery_fee_mmk: number;
+    discount_mmk: number;
+    items: Array<{ product_name: string; quantity: number; unit_price_mmk: number }>;
+  }) => Promise<{ order: any; shop_id: string; shop_name: string }>;
+  getWebsiteUrl: () => Promise<string>;
+  setWebsiteUrl: (url: string) => Promise<string>;
+  reconnect: () => Promise<{ shop_id: string; shop_name: string; user_email?: string; shops?: Array<{ shop_id: string; shop_name: string }> }>;
+  getShopContext: () => Promise<{ shop_id: string; shop_name: string; user_email?: string; shops?: Array<{ shop_id: string; shop_name: string }> }>;
+  setActiveShop: (shopId: string) => Promise<void>;
   launcherDrag: (gesture: z.infer<typeof launcherDragSchema>) => void;
   loadDraft: () => Promise<AssistantDraft | null>;
   saveDraftFields: (fields: AssistantDraftFields) => void;

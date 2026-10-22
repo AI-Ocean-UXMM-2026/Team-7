@@ -11,13 +11,22 @@ import {
   reserveProviderUsage,
 } from "./guard";
 
-const providerPrompt = `You extract a seller's customer conversation into a draft order.
-Return JSON only with exactly these keys: customer_name, customer_phone, delivery_address, notes,
-delivery_fee_mmk, discount_mmk, items, missing_fields.
-Use null for any value that is missing, ambiguous, or not explicitly stated. Never infer a price,
-quantity, delivery fee, discount, customer detail, or address. Keep all money as whole integer MMK.
-Always return at least one item with product_name, quantity, and unit_price_mmk; use null fields when
-the item is ambiguous or incomplete. missing_fields must list the paths that need seller review.`;
+const providerPrompt = `You are an expert order extraction AI for Myanmar social commerce sellers (Facebook Messenger, TikTok, Viber).
+Extract customer orders from messy customer conversations or seller shorthand notes.
+Return JSON only with exactly these keys:
+- customer_name: English or Burmese name (e.g. "Aye Aye", "Daw Khin Khin", "ကိုမျိုး", "မစုစု"). Strip honorifics/greetings if separate.
+- customer_phone: One or more Myanmar phone numbers (e.g. "09 777 222 111" or "09111222 / 09333444"). If multiple numbers exist, join them with " / ".
+- delivery_address: Full street, township, and city in English or Burmese (e.g. "အမှတ် ၁၂၊ ဗဟိုလမ်း၊ ကမာရွတ်", "Kamayut, Yangon").
+- notes: Special instructions or delivery notes if explicitly stated; use null if none (notes are optional).
+- delivery_fee_mmk: Whole integer MMK if specified (e.g. delivery fee, ပို့ခ), else 0 or null.
+- discount_mmk: Whole integer MMK if specified (e.g. discount, လျှော့ပေး), else 0 or null.
+- items: Array of one or more items [{ product_name, quantity, unit_price_mmk }].
+  * product_name: Extract ONLY the clean product name without greetings or filler words.
+    NEVER include conversational words like "မင်္ဂလာပါ", "ယူမယ်", "မှာပါမယ်", "ပို့ပေးပါ", "အစ်မ", "ရမလား", "Hi", "Please", "Thanks".
+  * quantity: Integer quantity. Parse English (1, 2, 3), Burmese digits (၁, ၂, ၃), or Burmese quantity words (တစ်ခု, ၂ ထည်, ၃ ဘူး). Default 1 if item clearly ordered.
+  * unit_price_mmk: Whole integer MMK per unit if mentioned; use null if unstated. Never invent prices.
+- missing_fields: Array of paths needing seller review (e.g. ["customer_phone"] if phone is missing).
+Keep all money amounts as whole integer MMK. Return pure JSON only.`;
 
 type ProviderResponse = {
   choices?: Array<{ message?: { content?: unknown } }>;

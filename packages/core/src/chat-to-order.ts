@@ -81,12 +81,17 @@ function parseAmount(value: string | null | undefined): number | null {
 
 function parseQuantity(value: string | null | undefined): number | null {
   if (!value) return null;
-  const normalized = normalizeDigits(value).trim().toLowerCase();
-  if (/^\d+$/.test(normalized)) {
-    const quantity = Number(normalized);
+  const raw = normalizeDigits(value).trim().toLowerCase();
+  const stripped = raw.replace(/(?:လုံး|ခု|ထည်|ဘူး|စုံ|ထုပ်|ပစ္စည်း)$/u, "");
+  if (/^\d+$/.test(raw)) {
+    const quantity = Number(raw);
     return Number.isSafeInteger(quantity) && quantity > 0 && quantity <= 1_000_000 ? quantity : null;
   }
-  return burmeseNumberWords[normalized] ?? englishNumberWords[normalized] ?? null;
+  if (/^\d+$/.test(stripped)) {
+    const quantity = Number(stripped);
+    return Number.isSafeInteger(quantity) && quantity > 0 && quantity <= 1_000_000 ? quantity : null;
+  }
+  return burmeseNumberWords[raw] ?? burmeseNumberWords[stripped] ?? englishNumberWords[raw] ?? englishNumberWords[stripped] ?? null;
 }
 
 function lastSentence(value: string) {
@@ -106,37 +111,61 @@ function extractQuantity(value: string) {
   if (trailingX) return { value: parseQuantity(trailingX[2]), token: trailingX[0].trim() };
   const english = value.match(/\b([0-9၀-၉]+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:x|×|pcs?\.?|pieces?|items?|bags?|bottles?|sets?|ထည်|လုံး|ခု|စုံ|ဗူး|ထုပ်|ပစ္စည်း)?\b/iu);
   if (english) return { value: parseQuantity(english[1]), token: english[0] };
-  const burmese = value.match(/(တစ်လုံး|တစ်ခု|တစ်ထည်|တစ်|နှစ်လုံး|နှစ်ခု|နှစ်ထည်|နှစ်|သုံးလုံး|သုံးခု|သုံးထည်|သုံး|လေးလုံး|လေးခု|လေး|ငါးလုံး|ငါးခု|ငါး|ခြောက်လုံး|ခြောက်ခု|ခြောက်|ခုနစ်လုံး|ခုနစ်ခု|ခုနစ်|ရှစ်လုံး|ရှစ်ခု|ရှစ်|ကိုးလုံး|ကိုးခု|ကိုး|ဆယ်လုံး|ဆယ်ခု|ဆယ်|[0-9၀-၉]+)\s*(?:လုံး|ခု|ထည်|စုံ|ဗူး|ထုပ်|ပစ္စည်း)?/u);
+  const burmese = value.match(/(တစ်လုံး|တစ်ခု|တစ်ထည်|တစ်ဘူး|တစ်စုံ|တစ်ထုပ်|တစ်|နှစ်လုံး|နှစ်ခု|နှစ်ထည်|နှစ်ဘူး|နှစ်စုံ|နှစ်ထုပ်|နှစ်|သုံးလုံး|သုံးခု|သုံးထည်|သုံးဘူး|သုံးစုံ|သုံးထုပ်|သုံး|လေးလုံး|လေးခု|လေးထည်|လေးဘူး|လေး|ငါးလုံး|ငါးခု|ငါးထည်|ငါးဘူး|ငါး|ခြောက်လုံး|ခြောက်ခု|ခြောက်|ခုနစ်လုံး|ခုနစ်ခု|ခုနစ်|ရှစ်လုံး|ရှစ်ခု|ရှစ်|ကိုးလုံး|ကိုးခု|ကိုး|ဆယ်လုံး|ဆယ်ခု|ဆယ်|[0-9၀-၉]+)\s*(?:လုံး|ခု|ထည်|စုံ|ဗူး|ထုပ်|ပစ္စည်း)?/u);
   if (burmese) return { value: parseQuantity(burmese[1]), token: burmese[0] };
   return { value: null, token: null };
 }
 
-function productFromSegment(segment: string) {
-  let result = lastSentence(segment)
-    .replace(/\b(?:hi|hello|hey|please|could i get|can i get|i want|i need|order|add|get|give me)\b/giu, " ")
-    .replace(/(?:မင်္ဂလာပါ|ကျေးဇူးပြု၍)/gu, " ")
+function cleanProductText(text: string): string {
+  return text
+    // Strip greetings
+    .replace(/(?:မင်္ဂလာပါရှင့်|မင်္ဂလာပါခင်ဗျာ|မင်္ဂလာပါခင်ဗျ|မင်္ဂလာပါ|မင်္ဂလာ)/gu, " ")
+    .replace(/\b(?:hi|hello|hey|good day|good morning|good evening)\b/giu, " ")
+    // Strip conversational pronouns & honorifics
+    .replace(/(?:အစ်မ|အမ|အစ်ကို|အကို|ညီမလေး|ညီမ|ညီလေး|မမ|bro|sis)\b/giu, " ")
+    // Strip request phrases & intent verbs
+    .replace(/(?:မှာယူပါမယ်|မှာယူမယ်နော်|မှာယူမယ်|မှာပါမယ်|မှာမယ်|ယူပါမယ်|ယူမယ်နော်|ယူမယ်|လိုချင်လို့ပါ|လိုချင်ပါမယ်|လိုချင်တယ်|လိုချင်|ရမလားရှင့်|ရမလားခင်ဗျ|ရမလား|ရပါသလား|ရှိသေးလားရှင့်|ရှိသေးလားခင်ဗျ|ရှိသေးလား|အားပေးမယ်|အားပေးပါမယ်)/gu, " ")
+    .replace(/\b(?:can i get|could i get|can i order|i want to buy|i would like to buy|i would like|i want|i need|order|please send|give me|buy|get|take|please)\b/giu, " ")
+    // Strip delivery words
+    .replace(/(?:ပို့ပေးပါနော်|ပို့ပေးပါရှင့်|ပို့ပေးပါခင်ဗျ|ပို့ပေးပါဦး|ပို့ပေးပါ|ပို့ပေး|ကိုပို့)/gu, " ")
+    // Strip polite particles & thanks
+    .replace(/(?:ပါရှင့်|ပါခင်ဗျာ|ပါခင်ဗျ|ပါနော်|နော်|ရှင့်|ခင်ဗျာ|ခင်ဗျ|ပါ|ကျေးဇူးတင်ပါတယ်|ကျေးဇူးပါ|ကျေးဇူးပြု၍)/gu, " ")
+    .replace(/\b(?:thanks|thank you|plz)\b/giu, " ")
+    // Strip price clauses (e.g. at 25000 kyat, for 15000 ks)
+    .replace(/\b(?:at|for)\s+[0-9၀-၉,\s]+(?:mmk|kyats?|ကျပ်)?(?:\s+each)?\b/giu, " ")
+    .replace(/[0-9၀-၉,\s]+\s*(?:mmk|kyats?|ကျပ်|ကျပ်သား)/giu, " ")
     .replace(/\b(?:at|for)\b.*$/iu, " ")
-    .replace(/^\s*(?:each|per)\s+/iu, " ")
-    .replace(/(?:တစ်လုံး|တစ်ခု|တစ်ထည်|တစ်|နှစ်လုံး|နှစ်ခု|နှစ်ထည်|နှစ်|သုံးလုံး|သုံးခု|သုံးထည်|သုံး|လေးလုံး|လေးခု|လေး|ငါးလုံး|ငါးခု|ငါး|ခြောက်|ခုနစ်|ရှစ်|ကိုး|ဆယ်)\s*(?:လုံး|ခု|ထည်)?/gu, " ");
-  result = result.replace(/^\s*(?:item|product|ပစ္စည်း|ပစ္စည်းအမည်)\s*[-:#：]?\s*/iu, "");
+    // Strip explicit item prefixes
+    .replace(/^\s*(?:item|product|ပစ္စည်း|ပစ္စည်းအမည်)\s*[-:#：=]?\s*/iu, "")
+    .replace(/\b(?:each|per)\s+/giu, " ")
+    .replace(/(?:တစ်လုံး|တစ်ခု|တစ်ထည်|တစ်ဘူး|တစ်စုံ|တစ်ထုပ်|တစ်တွဲ)\s*/gu, " ")
+    .replace(/(?:\s+)(?:လုံး|ခု|ထည်|ဘူး|စုံ|ထုပ်)(?=\s|$)/gu, " ")
+    .replace(/\b(?:and|&|နှင့်|နဲ့)\b/giu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function productFromSegment(segment: string) {
+  let result = lastSentence(segment);
   const quantity = extractQuantity(result);
-  if (quantity.token) result = result.replace(quantity.token, " ");
-  result = result.replace(/\b(?:and|&|နှင့်)\b/giu, " ");
-  result = result.replace(/(?:မှာယူမယ်|မှာယူပါမယ်|မှာယူ|ယူမယ်|ယူပါမယ်|ယူ|လိုချင်တယ်|လိုချင်ပါမယ်|လိုချင်)$/u, " ");
+  if (quantity.token) {
+    result = result.replace(quantity.token, " ");
+  }
+  result = cleanProductText(result);
   return clean(result);
 }
 
 function isMetadataLine(value: string) {
-  return /^(?:customer|name|buyer|recipient|phone|mobile|tel|address|delivery address|shipping address|note|notes)\s*[-:#：]?/iu.test(value)
-    || /^(?:အမည်|နာမည်|ဖုန်း|လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့မယ့်လိပ်စာ|မှတ်ချက်)\s*[-:#：]?/u.test(value)
+  return /^(?:customer|name|buyer|recipient|phone|mobile|tel|address|delivery address|shipping address|note|notes)\s*[-:#：=]?/iu.test(value)
+    || /^(?:အမည်|နာမည်|ဖုန်း|လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့မယ့်လိပ်စာ|မှတ်ချက်)\s*[-:#：=]?/u.test(value)
     || /(?:ကို\s*ပို့|ပို့ပေး|cod|cash on delivery|delivery fee|ပို့ခ|ငွေလွှဲ|payment)/iu.test(value)
     || /^(?:\+?95|09|၀၉)[\d၀-၉\s-]{6,18}$/u.test(value);
 }
 
 function productSegmentFrom(value: string) {
-  const segments = value.split(/\n|;|\s+(?:and|နှင့်)\s+/giu).map((segment) => segment.trim()).filter(Boolean);
+  const segments = value.split(/\n|;|\s+(?:and|နှင့်|နဲ့)\s+/giu).map((segment) => segment.trim()).filter(Boolean);
   const productSegments = segments.filter((segment) => !isMetadataLine(segment));
-  return productSegments.find((segment) => /(?:get|want|need|order|qty|quantity|x\s*[0-9၀-၉]|[0-9၀-၉]+\s*x|ယူ|လိုချင်|လုံး|ခု|ထည်|စုံ|ဗူး|ထုပ်|ပစ္စည်း)/iu.test(segment))
+  return productSegments.find((segment) => /(?:get|want|need|order|qty|quantity|x\s*[0-9၀-၉]|[0-9၀-၉]+\s*x|ယူ|လိုချင်|မှာ|လုံး|ခု|ထည်|စုံ|ဗူး|ထုပ်|ပစ္စည်း)/iu.test(segment))
     ?? productSegments.at(-1)
     ?? value;
 }
@@ -146,15 +175,37 @@ function extractItems(chat: string): ChatOrderExtractionItem[] {
   const pricePattern = /([0-9၀-၉][0-9၀-၉,\s]{0,20})\s*(?:mmk|kyats?|ကျပ်|ကျပ်သား)/giu;
   let match: RegExpExecArray | null;
   let cursor = 0;
+
+  // First pass: extract items tied to explicit price patterns
   while ((match = pricePattern.exec(chat))) {
     const segment = productSegmentFrom(chat.slice(cursor, match.index));
     const quantity = extractQuantity(segment);
-    items.push({
-      product_name: productFromSegment(segment),
-      quantity: quantity.value,
-      unit_price_mmk: parseAmount(match[1]),
-    });
+    const prodName = productFromSegment(segment);
+    if (prodName) {
+      items.push({
+        product_name: prodName,
+        quantity: quantity.value,
+        unit_price_mmk: parseAmount(match[1]),
+      });
+    }
     cursor = pricePattern.lastIndex;
+  }
+
+  // Second pass: if no priced items found or multiple lines exist without price
+  if (items.length === 0) {
+    const lines = chat.split(/\r?\n|;|\s+(?:and|နှင့်|နဲ့)\s+/giu).map(l => l.trim()).filter(Boolean);
+    const productLines = lines.filter(l => !isMetadataLine(l));
+    for (const line of productLines) {
+      const q = extractQuantity(line);
+      const name = productFromSegment(line);
+      if (name && !items.some(it => it.product_name === name)) {
+        items.push({
+          product_name: name,
+          quantity: q.value,
+          unit_price_mmk: null,
+        });
+      }
+    }
   }
 
   if (items.length === 0) {
@@ -167,29 +218,40 @@ function extractItems(chat: string): ChatOrderExtractionItem[] {
 }
 
 function extractCustomer(chat: string) {
-  const sender = chat.match(/^\s*([A-Za-z][A-Za-z .'’-]{1,159})\s*:\s*/u);
+  const sender = chat.match(/^\s*([A-Za-z\u1000-\u109F][A-Za-z\u1000-\u109F .'’-]{1,159})\s*:\s*/u);
   const senderName = sender?.[1];
-  if (senderName && !/^(?:phone|address|note|notes|name|customer)$/iu.test(senderName)) return clean(senderName);
-  const english = chat.match(/(?:^|\n)\s*(?:customer|customer name|name|buyer|recipient)\s*(?:[-–—:#：]|is)?\s*([A-Za-z][A-Za-z .'’-]{1,159}?)(?=\.|,|\n|\s+(?:phone|deliver|address|note)\b|$)/imu)
+  if (senderName && !/^(?:phone|address|note|notes|name|customer|အမည်|နာမည်|ဖုန်း|လိပ်စာ|မှတ်ချက်)$/iu.test(senderName)) return clean(senderName);
+  const english = chat.match(/(?:^|\n)\s*(?:customer|customer name|name|buyer|recipient)\s*(?:[-–—:#：=]|is)?\s*([A-Za-z][A-Za-z .'’-]{1,159}?)(?=\.|,|\n|\s+(?:phone|deliver|address|note)\b|$)/imu)
     ?? chat.match(/\b(?:my\s+name\s+is|i\s+am|i['’]m)\s+([A-Za-z][A-Za-z .'’-]{1,159}?)(?=\.|,|\n|\s+(?:phone|deliver|address|note)\b|$)/iu);
   if (english) return clean(english[1]);
-  const burmese = chat.match(/(?:^|\n)\s*(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：])?\s*([^၊။\n,]{1,160})/u)
-    ?? chat.match(/(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：])?\s*([^၊။\n,]{1,160})/u);
-  return clean(burmese?.[1]?.replace(/ပါ$/u, ""));
+  const burmese = chat.match(/(?:^|\n)\s*(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：=])?\s*([^၊။\n,]{1,160})/u)
+    ?? chat.match(/(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：=])?\s*([^၊။\n,]{1,160})/u);
+  if (burmese) return clean(burmese?.[1]?.replace(/ပါ$/u, ""));
+  // Match Burmese honorific names e.g. ဒေါ်အေးအေး, မဆုဆု, ကိုမျိုး, ဦးအောင်
+  const honorific = chat.match(/(?:^|\n|\s)(?:ဒေါ်|ဦး|ကို|မ)\s*([A-Za-z\u1000-\u102A\u103B-\u1049]{2,30})/u);
+  if (honorific && !/^(?:မင်္ဂလာ|မရှိ|မရ|မပို့|မလုပ်)/u.test(honorific[0].trim())) {
+    return clean(honorific[0].trim());
+  }
+  return null;
 }
 
 function extractPhone(chat: string) {
-  const phone = chat.match(/(?:\+?95|09|၀၉)[\d၀-၉\s-]{6,18}/u);
-  return clean(phone?.[0]) ? normalizeDigits(phone![0]).replace(/\s+/g, " ").trim() : null;
+  const matches = [...chat.matchAll(/(?:\+?95\s*9|09|၀၉)[\d၀-၉\s-]{6,18}/gu)];
+  if (matches.length === 0) return null;
+  const phones = matches
+    .map((m) => normalizeDigits(m[0]).replace(/[\s-]+/g, " ").trim())
+    .filter((p) => p.length >= 8);
+  const unique = [...new Set(phones)];
+  return unique.length > 0 ? unique.join(" / ") : null;
 }
 
 function extractAddress(chat: string) {
   const english = chat.match(/\b(?:deliver|ship|send)\s+(?:to|at)\s+(.+?)(?=\.|\n|\s+(?:name|phone|note|cod)\b|$)/iu)
-    ?? chat.match(/(?:^|\n)\s*(?:address|delivery address|shipping address)\s*[-–—:#：]?\s*([^\n။]+?)(?=\n|$)/imu);
+    ?? chat.match(/(?:^|\n)\s*(?:address|delivery address|shipping address)\s*[-–—:#：=]?\s*([^\n။]+?)(?=\n|$)/imu);
   if (english) return clean(english[1]);
-  const labeled = chat.match(/(?:^|\n)\s*(?:လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့ရမည့်လိပ်စာ|ပို့မယ့်လိပ်စာ|ပို့မည့်လိပ်စာ)\s*[-–—:#：]?\s*([^\n၊။]+)/u);
+  const labeled = chat.match(/(?:^|\n)\s*(?:လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့ရမည့်လိပ်စာ|ပို့မယ့်လိပ်စာ|ပို့မည့်လိပ်စာ)\s*[-–—:#：=]?\s*([^\n။]+)/u);
   if (labeled) return clean(labeled[1]);
-  const burmese = chat.match(/([^\n၊။]+?)\s*ကို\s*ပို့(?:ပေး)?(?:ပါ)?/u);
+  const burmese = chat.match(/([^\n။]+?)\s*ကို\s*ပို့(?:ပေး)?(?:ပါ)?/u);
   return clean(burmese?.[1]);
 }
 

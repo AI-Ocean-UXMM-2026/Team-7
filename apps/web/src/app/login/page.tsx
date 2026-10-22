@@ -8,7 +8,8 @@ export default async function LoginPage({ searchParams }: {
 }) {
   const params = await searchParams;
   const next = authDestination(params.next ?? null);
-  if (await getCurrentSession()) redirect(next);
+  const allowSwitch = (params as Record<string, string | undefined>)?.switch === "1" || (params as Record<string, string | undefined>)?.preview === "1";
+  if (!allowSwitch && (await getCurrentSession())) redirect(next);
   const notice = params.auth === "password-updated"
     ? "Password updated. Sign in with your new password."
     : params.auth === "configuration"

@@ -18,7 +18,8 @@ import {
   screenshotMatchRequestSchema,
   screenshotMatchResponseSchema,
 } from "@ocean/contracts";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
   commandSchema,
@@ -33,6 +34,40 @@ import {
 import { LauncherDragSession } from "./launcher-drag.js";
 import { attachNavigationGuards } from "./navigation-guard.js";
 import { resolveWebsiteUrl } from "./website-url.js";
+
+function loadEnvFiles() {
+  const candidateDirs = [
+    process.cwd(),
+    resolve(process.cwd(), ".."),
+    resolve(process.cwd(), "../.."),
+  ];
+  for (const dir of candidateDirs) {
+    for (const filename of [".env.local", ".env"]) {
+      const fullPath = join(dir, filename);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          for (const line of content.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith("#")) continue;
+            const eqIdx = trimmed.indexOf("=");
+            if (eqIdx > 0) {
+              const key = trimmed.slice(0, eqIdx).trim();
+              let val = trimmed.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                val = val.slice(1, -1);
+              }
+              if (!process.env[key]) {
+                process.env[key] = val;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+  }
+}
+loadEnvFiles();
 
 const isDevelopment = app.commandLine.hasSwitch("dev");
 const devUrl = "http://127.0.0.1:5173";
@@ -206,38 +241,87 @@ function toggleAssistant() {
 
 let connectionAttempt: Promise<void> | null = null;
 
-async function connectedSession(websiteUrl: string, target: string) {
-  if (!connectionAttempt) {
-    const attempt = establishConnectedSession(websiteUrl, target);
+async function connectedSession(websiteUrl: string, target: string, force = false) {
+  if (!connectionAttempt || force) {
+    const attempt = establishConnectedSession(websiteUrl, target, force);
     connectionAttempt = attempt;
     void attempt.finally(() => { if (connectionAttempt === attempt) connectionAttempt = null; }).catch(() => {});
   }
   await connectionAttempt;
 }
 
-async function establishConnectedSession(websiteUrl: string, target: string) {
+async function establishConnectedSession(websiteUrl: string, target: string, force = false) {
   const partition = session.fromPartition(assistantPartition);
-  const cookies = await partition.cookies.get({ url: websiteUrl, name: "salesayar_session" });
-  const prior = cookies[0];
-  if (prior) {
-    const response = await fetch(target, { headers: { cookie: `salesayar_session=${prior.value}` }, redirect: "manual", signal: AbortSignal.timeout(5000) }).catch(() => null);
-    if (response?.ok) return;
+  if (!force) {
+    const cookies = await partition.cookies.get({ url: websiteUrl, name: "salesayar_session" });
+    const prior = cookies[0];
+    if (prior) {
+      const response = await fetch(target, { headers: { cookie: `salesayar_session=${prior.value}` }, redirect: "manual", signal: AbortSignal.timeout(5000) }).catch(() => null);
+      if (response?.ok) return;
+    }
+  } else {
+    try {
+      const cookies = await partition.cookies.get({ url: websiteUrl, name: "salesayar_session" });
+      for (const c of cookies) {
+        await partition.cookies.remove(websiteUrl, c.name);
+      }
+    } catch {}
   }
   const verifier = crypto.randomBytes(32).toString("hex");
   const challenge = crypto.createHash("sha256").update(Buffer.from(verifier, "hex")).digest("hex");
-  await shell.openExternal(new URL(`/assistant/connect?challenge=${challenge}`, websiteUrl).href);
+
+  // Local loopback listener on port 41920 for instantaneous zero-latency pairing with deployed website
+  let loopbackServer: import("node:http").Server | null = null;
+  let receivedToken: string | null = null;
+  const loopbackPort = 41920;
+  try {
+    const http = await import("node:http");
+    loopbackServer = http.createServer((req, res) => {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
+      if (req.url && req.url.includes("/pair")) {
+        const u = new URL(req.url, `http://127.0.0.1:${loopbackPort}`);
+        const token = u.searchParams.get("token");
+        if (token && typeof token === "string" && token.length <= 4000) {
+          receivedToken = token;
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end("<html><body style='font-family:sans-serif;text-align:center;padding:40px'><h2>✓ Assistant Connected!</h2><p>You can return to your floating assistant window.</p></body></html>");
+          return;
+        }
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    loopbackServer.listen(loopbackPort, "127.0.0.1");
+    loopbackServer.on("error", () => {
+      loopbackServer = null;
+    });
+  } catch {}
+
+  const connectPath = `/assistant/connect?challenge=${challenge}${loopbackServer ? `&port=${loopbackPort}` : ""}`;
+  await shell.openExternal(new URL(connectPath, websiteUrl).href);
   const redeemUrl = new URL("/api/assistant/connect/redeem", websiteUrl).href;
   for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (receivedToken) {
+      if (loopbackServer) { try { loopbackServer.close(); } catch {} }
+      await partition.cookies.set({ url: websiteUrl, name: "salesayar_session", value: receivedToken, path: "/", httpOnly: true, secure: new URL(websiteUrl).protocol === "https:", sameSite: "lax" });
+      const verified = await fetch(target, { headers: { cookie: `salesayar_session=${receivedToken}` }, redirect: "manual", signal: AbortSignal.timeout(5000) }).catch(() => null);
+      if (verified?.ok) return;
+    }
     await new Promise(resolve => setTimeout(resolve, 1500));
     const response = await fetch(redeemUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verifier }), signal: AbortSignal.timeout(5000), cache: "no-store" }).catch(() => null);
     if (!response?.ok) continue;
     const payload = await response.json().catch(() => null) as { ready?: boolean; token?: string } | null;
     if (!payload?.ready || typeof payload.token !== "string" || payload.token.length > 4000) continue;
+    if (loopbackServer) { try { loopbackServer.close(); } catch {} }
     await partition.cookies.set({ url: websiteUrl, name: "salesayar_session", value: payload.token, path: "/", httpOnly: true, secure: new URL(websiteUrl).protocol === "https:", sameSite: "lax" });
     const verified = await fetch(target, { headers: { cookie: `salesayar_session=${payload.token}` }, redirect: "manual", signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (!verified?.ok) throw new Error("The connected session could not be verified. Try connecting again.");
     return;
   }
+  if (loopbackServer) { try { loopbackServer.close(); } catch {} }
   throw new Error("Assistant connection timed out. Return to the signed-in browser and choose Connect assistant, then try again.");
 }
 
@@ -306,16 +390,45 @@ ipcMain.handle(ipcChannels.readClipboardImage, async (event) => {
   return null;
 });
 
-const paymentContextSchema = z.object({ shop_id: z.uuid(), shop_name: z.string().min(1).max(160) }).strict();
+const paymentContextSchema = z.object({
+  shop_id: z.uuid(),
+  shop_name: z.string().min(1).max(160),
+  user_email: z.string().optional(),
+  user_display_name: z.string().optional(),
+  shops: z.array(z.object({ shop_id: z.uuid(), shop_name: z.string() })).optional(),
+}).passthrough();
 const savedPaymentSchema = z.object({
   evidence: z.object({ id: z.uuid(), revision: z.number().int().nonnegative(), status: z.string() }).passthrough(),
   message: z.string().min(1).max(240),
 }).passthrough();
 
+let customWebsiteUrl: string | null = null;
+let activeShopId: string | null = null;
+
 function paymentWebsiteUrl() {
-  const websiteUrl = resolveWebsiteUrl(process.env.SALESAYAR_WEB_URL, isDevelopment);
+  const configured = customWebsiteUrl || process.env.SALESAYAR_WEB_URL || (process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ? process.env.NEXT_PUBLIC_APP_URL : undefined);
+  const websiteUrl = resolveWebsiteUrl(configured, isDevelopment);
   if (!websiteUrl) throw new Error("The connected workspace URL is not configured.");
   return websiteUrl;
+}
+
+async function forceReconnectAssistant() {
+  const websiteUrl = paymentWebsiteUrl();
+  const sessionUrl = new URL("/api/assistant/session", websiteUrl).href;
+  const partition = session.fromPartition(assistantPartition);
+  try {
+    const cookies = await partition.cookies.get({ url: websiteUrl, name: "salesayar_session" });
+    for (const c of cookies) {
+      await partition.cookies.remove(websiteUrl, c.name);
+    }
+  } catch {}
+  connectionAttempt = null;
+  await connectedSession(websiteUrl, sessionUrl, true);
+  const contextPath = activeShopId
+    ? `/api/assistant/payment-context?shop_id=${encodeURIComponent(activeShopId)}`
+    : "/api/assistant/payment-context";
+  const context = paymentContextSchema.parse(await paymentRequest(contextPath));
+  return context;
 }
 
 async function paymentRequest(path: string, init?: RequestInit) {
@@ -365,7 +478,10 @@ function reviewedImage(payload: unknown) {
 ipcMain.handle(ipcChannels.analyzePayment, async (event, payload: unknown) => {
   if (!ownsWindow(event, panel)) throw new Error("This window cannot analyze payments.");
   const image = reviewedImage(payload);
-  const context = paymentContextSchema.parse(await paymentRequest("/api/assistant/payment-context"));
+  const contextPath = activeShopId
+    ? `/api/assistant/payment-context?shop_id=${encodeURIComponent(activeShopId)}`
+    : "/api/assistant/payment-context";
+  const context = paymentContextSchema.parse(await paymentRequest(contextPath));
   const evidenceId = crypto.randomUUID();
   const form = new FormData();
   form.set("shop_id", context.shop_id);
@@ -387,6 +503,9 @@ ipcMain.handle(ipcChannels.rematchPayment, async (event, payload: unknown) => {
 ipcMain.handle(ipcChannels.savePaymentEvidence, async (event, payload: unknown) => {
   if (!ownsWindow(event, panel)) throw new Error("This window cannot save payment evidence.");
   const input = z.object({ image: paymentReviewImageSchema, payload: paymentEvidenceSaveSchema }).strict().parse(payload);
+  if (activeShopId && input.payload.shop_id !== activeShopId) {
+    input.payload.shop_id = activeShopId;
+  }
   const form = new FormData();
   form.set("payload", JSON.stringify(input.payload));
   form.set("file", reviewedImage(input.image), "transaction.png");
@@ -401,6 +520,108 @@ ipcMain.handle(ipcChannels.receivingAccounts, async (event, payload: unknown) =>
     id: z.uuid(), provider: z.string(), account_name: z.string(), last_four: z.string(),
   }).strict()).max(100) }).strict().parse(await paymentRequest(`/api/shop-receiving-accounts?shop_id=${encodeURIComponent(shopId)}`));
   return result.accounts;
+});
+
+ipcMain.handle(ipcChannels.saveOrder, async (event, payload: unknown) => {
+  if (!ownsWindow(event, panel)) throw new Error("This window cannot save orders.");
+  const contextPath = activeShopId
+    ? `/api/assistant/payment-context?shop_id=${encodeURIComponent(activeShopId)}`
+    : "/api/assistant/payment-context";
+  const context = paymentContextSchema.parse(await paymentRequest(contextPath));
+  const input = z.object({
+    id: z.uuid(),
+    customer_name: z.string().min(1).max(160),
+    customer_phone: z.string().max(40).nullable().optional(),
+    delivery_address: z.string().max(500).nullable().optional(),
+    notes: z.string().max(4000).nullable().optional(),
+    delivery_fee_mmk: z.number().int().min(0),
+    discount_mmk: z.number().int().min(0),
+    items: z.array(z.object({
+      product_name: z.string().min(1).max(200),
+      quantity: z.number().int().min(1),
+      unit_price_mmk: z.number().int().min(0),
+    })).min(1),
+  }).parse(payload);
+
+  const orderPayload = {
+    shop_id: context.shop_id,
+    id: input.id,
+    expected_updated_at: null,
+    customer_name: input.customer_name.trim(),
+    customer_phone: input.customer_phone?.trim() || null,
+    delivery_address: input.delivery_address?.trim() || null,
+    notes: input.notes?.trim() || null,
+    order_status: "confirmed" as const,
+    fulfillment_status: "unfulfilled" as const,
+    delivery_fee_mmk: input.delivery_fee_mmk,
+    discount_mmk: input.discount_mmk,
+    items: input.items.map((it) => ({
+      product_name: it.product_name.trim(),
+      quantity: it.quantity,
+      unit_price_mmk: it.unit_price_mmk,
+    })),
+  };
+
+  const response = (await paymentRequest("/api/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(orderPayload),
+  })) as { order?: unknown; error?: string };
+
+  if (response.error || !response.order) {
+    throw new Error(response.error || "Failed to save order in workspace.");
+  }
+
+  return { order: response.order, shop_id: context.shop_id, shop_name: context.shop_name };
+});
+
+ipcMain.handle(ipcChannels.getWebsiteUrl, (event) => {
+  if (!ownsWindow(event, panel)) throw new Error("Unauthorized.");
+  return paymentWebsiteUrl();
+});
+
+ipcMain.handle(ipcChannels.setWebsiteUrl, async (event, url: unknown) => {
+  if (!ownsWindow(event, panel)) throw new Error("Unauthorized.");
+  if (typeof url !== "string" || !url.trim()) {
+    customWebsiteUrl = null;
+    return paymentWebsiteUrl();
+  }
+  const resolved = resolveWebsiteUrl(url.trim(), isDevelopment);
+  if (!resolved) throw new Error("Invalid URL. Please enter an HTTPS URL or http://127.0.0.1:3000.");
+  if (customWebsiteUrl !== resolved) {
+    customWebsiteUrl = resolved;
+    activeShopId = null;
+    const partition = session.fromPartition(assistantPartition);
+    try {
+      const cookies = await partition.cookies.get({ url: resolved, name: "salesayar_session" });
+      for (const c of cookies) {
+        await partition.cookies.remove(resolved, c.name);
+      }
+    } catch {}
+  }
+  return resolved;
+});
+
+ipcMain.handle(ipcChannels.reconnect, async (event) => {
+  if (!ownsWindow(event, panel)) throw new Error("Unauthorized.");
+  return await forceReconnectAssistant();
+});
+
+ipcMain.handle(ipcChannels.getShopContext, async (event) => {
+  if (!ownsWindow(event, panel)) throw new Error("Unauthorized.");
+  const contextPath = activeShopId
+    ? `/api/assistant/payment-context?shop_id=${encodeURIComponent(activeShopId)}`
+    : "/api/assistant/payment-context";
+  return paymentContextSchema.parse(await paymentRequest(contextPath));
+});
+
+ipcMain.handle(ipcChannels.setActiveShop, (event, shopId: unknown) => {
+  if (!ownsWindow(event, panel)) throw new Error("Unauthorized.");
+  if (typeof shopId === "string" && shopId.trim()) {
+    activeShopId = z.uuid().parse(shopId.trim());
+  } else {
+    activeShopId = null;
+  }
 });
 
 ipcMain.handle(ipcChannels.writeClipboardText, (event, payload: unknown) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@ocean/ui";
 import type { AssistantDraftFields } from "../main/contract.js";
 import { Launcher } from "./Launcher";
@@ -17,10 +17,9 @@ import {
 } from "./chat-order";
 import {
   buildCustomerReplies,
-  selectedConversation,
   splitConversationMessages,
-  type ConversationMessage,
 } from "./conversation-tools";
+import { VoucherCard, type VoucherOrder } from "./VoucherModal";
 
 type View = "home" | "chat" | "match";
 
@@ -36,7 +35,7 @@ const defaultFields: AssistantDraftFields = {
 };
 
 function SourceTag({ source }: { source: FieldSource }) {
-  const label = source === "extracted" ? "From message" : source === "manual" ? "Edited" : "Needs input";
+  const label = source === "extracted" ? "AI" : source === "manual" ? "Edited" : "Required";
   return <span className={`field-source field-source-${source}`}>{label}</span>;
 }
 
@@ -57,9 +56,45 @@ function AssistantPanel() {
   const [draftReady, setDraftReady] = useState(false);
   const [myReply, setMyReply] = useState("");
   const [enReply, setEnReply] = useState("");
-  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [savedOrder, setSavedOrder] = useState<VoucherOrder | null>(null);
+  const [savedShopName, setSavedShopName] = useState("တူတူတွက်မယ် Store");
+  const [connectedUserEmail, setConnectedUserEmail] = useState<string | null>(null);
+  const [availableShops, setAvailableShops] = useState<Array<{ shop_id: string; shop_name: string }>>([]);
+  const [activeShopId, setActiveShopId] = useState<string | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [connectedUrl, setConnectedUrl] = useState("http://127.0.0.1:3000/");
+  const [showUrlEditor, setShowUrlEditor] = useState(false);
+  const [targetUrlInput, setTargetUrlInput] = useState("");
+  const [chatInputMode, setChatInputMode] = useState<"paste" | "write">("paste");
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const conversationMessages = useMemo(() => splitConversationMessages(chat), [chat]);
+
+  const refreshShopContext = useCallback(async () => {
+    try {
+      const ctx = await window.assistant.getShopContext();
+      if (ctx) {
+        if (ctx.shop_name) setSavedShopName(ctx.shop_name);
+        if (ctx.shop_id) setActiveShopId(ctx.shop_id);
+        if (ctx.user_email) setConnectedUserEmail(ctx.user_email);
+        if (ctx.shops) setAvailableShops(ctx.shops);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    void refreshShopContext();
+  }, [refreshShopContext, connectedUrl]);
+
+  useEffect(() => {
+    void window.assistant.getWebsiteUrl().then((url) => {
+      if (url) {
+        setConnectedUrl(url);
+        setTargetUrlInput(url);
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -68,7 +103,6 @@ function AssistantPanel() {
       if (draft) {
         setView(draft.fields.view);
         setChat(draft.fields.chat);
-        setSelectedMessageIds(new Set(splitConversationMessages(draft.fields.chat).map((message) => message.id)));
         setOrder(draft.fields.order);
         setHasOrder(draft.fields.hasOrder);
         setConfirmed(draft.fields.confirmed);
@@ -113,13 +147,14 @@ function AssistantPanel() {
     value: string,
   ) {
     const sourceField = `${field}_source` as keyof EditableChatOrder;
+    setSavedOrder(null);
     setOrder((current) => ({ ...current, [field]: value, [sourceField]: "manual" } as EditableChatOrder));
     setConfirmed(false);
-    setNotice("Your correction is marked Edited. Review the complete order before confirming.");
   }
 
   function editItem(index: number, field: "product_name" | "quantity" | "unit_price_mmk", value: string) {
     const sourceField = field === "product_name" ? "product_name_source" : field === "quantity" ? "quantity_source" : "unit_price_mmk_source";
+    setSavedOrder(null);
     setOrder((current) => ({
       ...current,
       items: current.items.map((item, itemIndex) => itemIndex === index
@@ -127,7 +162,6 @@ function AssistantPanel() {
         : item),
     }));
     setConfirmed(false);
-    setNotice("Your correction is marked Edited. Review the complete order before confirming.");
   }
 
   function addItem() {
@@ -140,48 +174,16 @@ function AssistantPanel() {
       unit_price_mmk: "",
       unit_price_mmk_source: "missing",
     };
+    setSavedOrder(null);
     setOrder((current) => ({ ...current, items: [...current.items, item] }));
     setConfirmed(false);
   }
 
   function removeItem(index: number) {
     if (order.items.length === 1) return;
+    setSavedOrder(null);
     setOrder((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }));
     setConfirmed(false);
-  }
-
-  async function pasteFromClipboard() {
-    try {
-      const clipboardText = await window.assistant.readClipboardText();
-      if (!clipboardText.trim()) {
-        setNotice("Your clipboard is empty. Copy the customer messages first.");
-        return;
-      }
-      setChat(clipboardText);
-      setSelectedMessageIds(new Set(splitConversationMessages(clipboardText).map((message) => message.id)));
-      setHasOrder(false);
-      setConfirmed(false);
-      setNotice("Conversation pasted. Select the messages you want to use, then create the order.");
-    } catch {
-      setNotice("The assistant could not read your clipboard. Copy the messages and try again.");
-    }
-  }
-
-  function toggleMessage(message: ConversationMessage) {
-    setSelectedMessageIds((current) => {
-      const next = new Set(current);
-      if (next.has(message.id)) next.delete(message.id);
-      else next.add(message.id);
-      return next;
-    });
-  }
-
-  function selectAllMessages() {
-    setSelectedMessageIds(new Set(conversationMessages.map((message) => message.id)));
-  }
-
-  function clearSelectedMessages() {
-    setSelectedMessageIds(new Set());
   }
 
   async function copyText(text: string, successMessage: string) {
@@ -189,55 +191,152 @@ function AssistantPanel() {
       await window.assistant.writeClipboardText(text);
       setNotice(successMessage);
     } catch {
-      setNotice("The response could not be copied. Select the text and copy it manually.");
+      setNotice("Could not copy to clipboard. Select text manually.");
     }
   }
 
-  async function copySelectedMessages() {
-    const conversation = selectedConversation(conversationMessages, selectedMessageIds);
-    if (!conversation) {
-      setNotice("Select at least one message before copying.");
+  async function generateOrderFromText(rawText: string) {
+    const textToAnalyze = rawText.trim();
+    if (!textToAnalyze) {
+      setNotice("Please paste or write customer order details first.");
       return;
     }
-    await copyText(conversation, "Selected customer messages copied to clipboard.");
-  }
 
-  async function analyzeChat() {
-    const conversation = selectedConversation(conversationMessages, selectedMessageIds);
-    if (!conversation.trim()) {
-      setNotice("Select at least one customer message before creating an order.");
-      return;
-    }
+    setIsExtracting(true);
     setHasOrder(false);
     setConfirmed(false);
-    setOrder(emptyEditableOrder());
+    setSavedOrder(null);
+    setNotice("Analyzing order details and generating voucher…");
+
     const nextOrderId = resolveDraftOrderId(null, () => crypto.randomUUID());
     orderIdRef.current = nextOrderId;
     setOrderId(nextOrderId);
-    setExtractionMode("simulation");
-    setNotice("Reading the selected messages…");
+
     try {
-      const result = await extractChatOrder(conversation);
+      const result = await extractChatOrder(textToAnalyze);
       setOrder(result.order);
       setHasOrder(true);
-      const replies = buildCustomerReplies(validateEditableOrder(result.order));
+      setShowEditForm(false);
+
+      const itemsSummary = result.order.items
+        .filter((it) => it.product_name)
+        .map((it) => `${it.product_name} (${it.quantity || 1})`)
+        .join(", ");
+      const computedTotals = draftTotals(result.order);
+      const replies = buildCustomerReplies(validateEditableOrder(result.order), {
+        customerName: result.order.customer_name,
+        itemsSummary,
+        totalMmk: computedTotals.total_mmk,
+        deliveryAddress: result.order.delivery_address,
+        phone: result.order.customer_phone,
+      });
       setMyReply(replies.my);
       setEnReply(replies.en);
-      setNotice(result.notice);
+      setNotice("✓ Voucher generated! Review or save as PNG.");
     } catch {
-      setNotice("The conversation could not be organized. Check the copied text and try again.");
+      setNotice("Could not organize conversation. Check details and try again.");
+    } finally {
+      setIsExtracting(false);
     }
   }
 
-  function confirmOrder() {
+  async function handlePasteAndGenerate() {
+    try {
+      const clipboardText = await window.assistant.readClipboardText();
+      if (!clipboardText.trim()) {
+        setNotice("Clipboard is empty. Copy the customer message first.");
+        return;
+      }
+      if (hasOrder) {
+        await appendMessageAndReExtract(clipboardText);
+      } else {
+        setChat(clipboardText);
+        setChatInputMode("paste");
+        await generateOrderFromText(clipboardText);
+      }
+    } catch {
+      setNotice("Could not read clipboard. Copy messages and try again.");
+    }
+  }
+
+  async function appendMessageAndReExtract(newText: string) {
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    const combined = chat.trim() ? `${chat.trim()}\n${trimmed}` : trimmed;
+    setChat(combined);
+    setIsExtracting(true);
+    setNotice("Adding new message and updating voucher…");
+    try {
+      const result = await extractChatOrder(combined);
+      setOrder((prev) => {
+        const extracted = result.order;
+        return {
+          customer_name: extracted.customer_name || prev.customer_name,
+          customer_name_source: extracted.customer_name ? extracted.customer_name_source : prev.customer_name_source,
+          customer_phone: extracted.customer_phone || prev.customer_phone,
+          customer_phone_source: extracted.customer_phone ? extracted.customer_phone_source : prev.customer_phone_source,
+          delivery_address: extracted.delivery_address || prev.delivery_address,
+          delivery_address_source: extracted.delivery_address ? extracted.delivery_address_source : prev.delivery_address_source,
+          notes: extracted.notes || prev.notes,
+          notes_source: extracted.notes ? extracted.notes_source : prev.notes_source,
+          delivery_fee_mmk: (extracted.delivery_fee_mmk && extracted.delivery_fee_mmk !== "0") ? extracted.delivery_fee_mmk : prev.delivery_fee_mmk,
+          delivery_fee_mmk_source: (extracted.delivery_fee_mmk && extracted.delivery_fee_mmk !== "0") ? extracted.delivery_fee_mmk_source : prev.delivery_fee_mmk_source,
+          discount_mmk: (extracted.discount_mmk && extracted.discount_mmk !== "0") ? extracted.discount_mmk : prev.discount_mmk,
+          discount_mmk_source: (extracted.discount_mmk && extracted.discount_mmk !== "0") ? extracted.discount_mmk_source : prev.discount_mmk_source,
+          items: extracted.items.length > 0 && extracted.items.some((i) => i.product_name)
+            ? extracted.items
+            : prev.items,
+        };
+      });
+      setSavedOrder(null);
+      setConfirmed(false);
+      setHasOrder(true);
+
+      const itemsSummary = result.order.items
+        .filter((it) => it.product_name)
+        .map((it) => `${it.product_name} (${it.quantity || 1})`)
+        .join(", ");
+      const computedTotals = draftTotals(result.order);
+      const replies = buildCustomerReplies(validateEditableOrder(result.order), {
+        customerName: result.order.customer_name,
+        itemsSummary,
+        totalMmk: computedTotals.total_mmk,
+        deliveryAddress: result.order.delivery_address,
+        phone: result.order.customer_phone,
+      });
+      setMyReply(replies.my);
+      setEnReply(replies.en);
+      setNotice("✓ New message added! Voucher updated.");
+    } catch {
+      setNotice("Could not parse new message. You can also edit details directly.");
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
+  async function handleAppendFromClipboard() {
+    try {
+      const clipboardText = await window.assistant.readClipboardText();
+      if (!clipboardText.trim()) {
+        setNotice("Clipboard is empty. Copy the customer message first.");
+        return;
+      }
+      await appendMessageAndReExtract(clipboardText);
+    } catch {
+      setNotice("Could not read clipboard. Copy message and try again.");
+    }
+  }
+
+  async function confirmOrder() {
     if (!canConfirmDraft(confirmed, confirmationInFlight.current)) {
-      setNotice(confirmed ? "This draft is already confirmed. Analyze a new conversation to create another draft." : "A confirmation is already in progress. Please wait for its result.");
+      setNotice(confirmed ? "This order is already saved to your shop." : "Saving in progress…");
       return;
     }
     const errors = validateEditableOrder(order);
     if (errors.length > 0) {
       setConfirmed(false);
-      setNotice("Complete the highlighted order fields. A phone number is required when a delivery address is present; use 0 for an unstated delivery fee or discount.");
+      setShowEditForm(true);
+      setNotice("Please complete required order fields before saving.");
       return;
     }
 
@@ -245,9 +344,67 @@ function AssistantPanel() {
     orderIdRef.current = stableOrderId;
     setOrderId(stableOrderId);
     confirmationInFlight.current = true;
-    setConfirmed(true);
-    setNotice("Order confirmed. You can continue managing it from your workspace.");
-    confirmationInFlight.current = false;
+    setIsSaving(true);
+    setNotice("Saving order to shop workspace…");
+
+    try {
+      const res = await window.assistant.saveOrder({
+        id: stableOrderId,
+        customer_name: order.customer_name.trim(),
+        customer_phone: order.customer_phone.trim() || null,
+        delivery_address: order.delivery_address.trim() || null,
+        notes: order.notes.trim() || null,
+        delivery_fee_mmk: Number(order.delivery_fee_mmk) || 0,
+        discount_mmk: Number(order.discount_mmk) || 0,
+        items: order.items.map((it) => ({
+          product_name: it.product_name.trim(),
+          quantity: Number(it.quantity) || 1,
+          unit_price_mmk: Number(it.unit_price_mmk) || 0,
+        })),
+      });
+
+      setSavedOrder(res.order as VoucherOrder);
+      if (res.shop_name) setSavedShopName(res.shop_name);
+      setConfirmed(true);
+      setNotice(`✓ Order saved to ${res.shop_name}! It now appears on your Sales page.`);
+      void refreshShopContext();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to save order. Verify website connection.");
+    } finally {
+      setIsSaving(false);
+      confirmationInFlight.current = false;
+    }
+  }
+
+  async function handleReconnect() {
+    setIsReconnecting(true);
+    setNotice("Opening browser to connect assistant…");
+    try {
+      const ctx = await window.assistant.reconnect();
+      if (ctx) {
+        if (ctx.shop_name) setSavedShopName(ctx.shop_name);
+        if (ctx.shop_id) setActiveShopId(ctx.shop_id);
+        if (ctx.user_email) setConnectedUserEmail(ctx.user_email);
+        if (ctx.shops) setAvailableShops(ctx.shops);
+        setNotice(`✓ Connected to ${ctx.shop_name} (${ctx.user_email || "Active User"})!`);
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Reconnection timed out. Please try again.");
+    } finally {
+      setIsReconnecting(false);
+    }
+  }
+
+  async function handleSelectShop(shopId: string) {
+    try {
+      await window.assistant.setActiveShop(shopId);
+      setActiveShopId(shopId);
+      const chosen = availableShops.find((s) => s.shop_id === shopId);
+      if (chosen) setSavedShopName(chosen.shop_name);
+      setNotice(`Active shop switched to: ${chosen?.shop_name || shopId}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to switch shop");
+    }
   }
 
   function readLocalImage(file: File | undefined) {
@@ -260,15 +417,15 @@ function AssistantPanel() {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       if (typeof reader.result !== "string") {
-        setNotice("The local image could not be previewed.");
+        setNotice("The image could not be previewed.");
         return;
       }
       setScreenshot(reader.result);
-      setScreenshotRevision(current => current + 1);
+      setScreenshotRevision((current) => current + 1);
       setScreenshotName(file.name);
-      setNotice("Transaction image ready. Analyze it in this assistant and review every field.");
+      setNotice("Slip image ready. Review the extracted payment details.");
     });
-    reader.addEventListener("error", () => setNotice("The local image could not be read."));
+    reader.addEventListener("error", () => setNotice("The image could not be read."));
     reader.readAsDataURL(file);
   }
 
@@ -276,115 +433,698 @@ function AssistantPanel() {
     try {
       const source = await window.assistant.readClipboardImage();
       if (!source) {
-        setNotice("The clipboard has no image. Copy a transaction screenshot first.");
+        setNotice("Clipboard has no image. Copy a payment screenshot first.");
         return;
       }
       setScreenshot(source);
-      setScreenshotRevision(current => current + 1);
+      setScreenshotRevision((current) => current + 1);
       setScreenshotName("Pasted transaction.png");
-      setNotice("Transaction image ready. Analyze it in this assistant and review every field.");
+      setNotice("Slip image ready. Review the extracted payment details.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The copied image could not be read.");
+      setNotice(error instanceof Error ? error.message : "The image could not be read.");
     }
   }
 
   if (window.location.search.includes("view=launcher")) return <Launcher />;
 
   if (!draftReady) {
-    return <main className="assistant-shell" aria-live="polite"><div className="panel-scroll">Restoring your draft…</div></main>;
+    return (
+      <main className="assistant-shell" aria-live="polite">
+        <div className="panel-scroll">Loading assistant…</div>
+      </main>
+    );
   }
 
   const totals = draftTotals(order);
   const validationErrors = hasOrder ? validateEditableOrder(order) : [];
-  const customerReplies = buildCustomerReplies(validationErrors);
+  const customerReplies = buildCustomerReplies(validationErrors, {
+    customerName: order.customer_name,
+    itemsSummary: order.items
+      .filter((it) => it.product_name)
+      .map((it) => `${it.product_name} (${it.quantity || 1})`)
+      .join(", "),
+    totalMmk: totals.total_mmk,
+    deliveryAddress: order.delivery_address,
+    phone: order.customer_phone,
+  });
   const visibleMyReply = myReply || customerReplies.my;
   const visibleEnReply = enReply || customerReplies.en;
+
+  // Single language detection according to customer sentences
+  const isBurmese = /[\u1000-\u109F]/u.test(
+    `${chat} ${order.customer_name} ${order.delivery_address} ${order.items.map((it) => it.product_name).join(" ")}`,
+  );
+
+  const currentVoucherOrder: VoucherOrder = {
+    id: orderId || "draft",
+    created_at: new Date().toISOString(),
+    order_status: confirmed ? "confirmed" : "draft",
+    subtotal_mmk: totals.subtotal_mmk ?? 0,
+    delivery_fee_mmk: Number(order.delivery_fee_mmk) || 0,
+    discount_mmk: Number(order.discount_mmk) || 0,
+    total_mmk: totals.total_mmk ?? 0,
+    delivery_address: order.delivery_address || null,
+    notes: order.notes || null,
+    customers: {
+      name: order.customer_name || "Customer",
+      phone: order.customer_phone || null,
+    },
+    order_items: order.items.map((it, idx) => ({
+      id: it.key || String(idx),
+      product_name: it.product_name || "Product",
+      quantity: Math.max(1, Number(it.quantity) || 1),
+      unit_price_mmk: Math.max(0, Number(it.unit_price_mmk) || 0),
+      line_total_mmk: Math.max(1, Number(it.quantity) || 1) * Math.max(0, Number(it.unit_price_mmk) || 0),
+    })),
+  };
+
   return (
     <main className="assistant-shell">
+      {/* Header with Mini Home Icon */}
       <header className="panel-header">
-        <div className="header-drag" aria-hidden="true"><span className="panel-mark"><img src={dolphin} alt="" /></span><span className="title-copy"><strong>တူတူတွက်မယ်</strong><small>YOUR SELLER ASSISTANT</small></span></div>
-        <div className="window-actions"><button className="window-action" aria-label="Minimize assistant" title="Minimize assistant" onClick={() => void window.assistant.hideAssistant()}>−</button><button className="window-action close-action" aria-label="Close assistant and keep draft" title="Close assistant and keep draft" onClick={() => void window.assistant.hideAssistant()}>×</button></div>
+        <div className="header-drag" aria-hidden="true">
+          <span className="panel-mark">
+            <img src={dolphin} alt="" />
+          </span>
+          <span className="title-copy">
+            <strong>တူတူတွက်မယ်</strong>
+            <small>YOUR SELLER ASSISTANT</small>
+          </span>
+        </div>
+        <div className="window-actions">
+          <button
+            type="button"
+            className="header-home-btn"
+            title="Open တူတူတွက်မယ် workspace in browser"
+            aria-label="Open workspace"
+            onClick={() => void window.assistant.openWebsite()}
+          >
+            <Icon name="home" size={15} />
+          </button>
+          <button
+            className="window-action"
+            aria-label="Minimize"
+            title="Minimize"
+            onClick={() => void window.assistant.hideAssistant()}
+          >
+            −
+          </button>
+          <button
+            className="window-action close-action"
+            aria-label="Close"
+            title="Close"
+            onClick={() => void window.assistant.hideAssistant()}
+          >
+            ×
+          </button>
+        </div>
       </header>
+
       <div className="panel-scroll">
         {view === "home" ? (
           <>
-            <section className="panel-welcome"><div className="welcome-mascot" aria-hidden="true"><span className="welcome-ripple" /><img src={dolphin} alt="" /></div><span className="eyebrow">Ready when you are</span><h1>What are we working on?</h1><p>Turn customer conversations and payment screenshots into clear next steps.</p></section>
-            <div className="action-list" aria-label="Choose an assistant workflow">
-              <button className="action-card chat-action" onClick={() => { setView("chat"); setNotice(""); }}><span className="action-icon chat-icon"><Icon name="sales" size={22} /></span><span className="action-copy"><strong>Chat to Order</strong><small>Turn a conversation into an editable, validated order</small></span><span className="action-arrow" aria-hidden="true">→</span></button>
-              <button className="action-card match-action" onClick={() => { setView("match"); setNotice(""); }}><span className="action-icon match-icon"><Icon name="wallet" size={22} /></span><span className="action-copy"><strong>Match Payment to Order</strong><small>Extract transaction details and connect the right order</small></span><span className="action-arrow" aria-hidden="true">→</span></button>
+            {/* Mobbin-inspired Clean Hero */}
+            <section className="home-hero">
+              <div className="dolphin-avatar">
+                <span className="welcome-ripple" />
+                <img src={dolphin} alt="တူတူတွက်မယ်" />
+              </div>
+              <h1 className="home-title">တူတူတွက်မယ်</h1>
+              <p className="home-subtitle">Your Seller Assistant</p>
+            </section>
+
+            {/* Two Clean Functions without text clutter */}
+            <div className="clean-actions-list">
+              <button
+                type="button"
+                className="clean-action-card"
+                onClick={() => {
+                  setView("chat");
+                  setNotice("");
+                }}
+              >
+                <div className="clean-action-icon chat-blue">
+                  <Icon name="sales" size={24} />
+                </div>
+                <div className="clean-action-text">
+                  <strong>Chat to Order</strong>
+                  <span>Turn customer messages into instant vouchers</span>
+                </div>
+                <span className="action-arrow">→</span>
+              </button>
+
+              <button
+                type="button"
+                className="clean-action-card"
+                onClick={() => {
+                  setView("match");
+                  setNotice("");
+                }}
+              >
+                <div className="clean-action-icon match-green">
+                  <Icon name="wallet" size={24} />
+                </div>
+                <div className="clean-action-text">
+                  <strong>Match Payment to Order</strong>
+                  <span>Verify transaction slip & connect order</span>
+                </div>
+                <span className="action-arrow">→</span>
+              </button>
             </div>
-            <button className="website-link" onClick={() => void window.assistant.openWebsite().catch(() => setNotice("Your workspace could not be opened. Check the website connection and try again."))}><Icon name="home" size={17} /><span>Open တူတူတွက်မယ် workspace</span><span aria-hidden="true">↗</span></button>
+
+            {/* Connection Bar */}
+            <div className="connection-status-bar">
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                <span className="connection-indicator connected" />
+                <span className="connection-text" title={connectedUrl}>
+                  <code>{connectedUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}</code>
+                </span>
+                {savedShopName && (
+                  <span className="shop-badge" title={`Active shop: ${savedShopName}`}>
+                    🏪 {savedShopName}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "5px", alignItems: "center", flexShrink: 0 }}>
+                {availableShops.length > 1 && (
+                  <select
+                    className="shop-select-mini"
+                    value={activeShopId || ""}
+                    onChange={(e) => void handleSelectShop(e.target.value)}
+                    title="Switch shop"
+                  >
+                    {availableShops.map((s) => (
+                      <option key={s.shop_id} value={s.shop_id}>
+                        {s.shop_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className="switch-url-btn"
+                  onClick={() => void handleReconnect()}
+                  disabled={isReconnecting}
+                  title="Reconnect to active browser account"
+                >
+                  {isReconnecting ? "Connecting…" : "🔄 Reconnect"}
+                </button>
+                <button
+                  type="button"
+                  className="switch-url-btn"
+                  onClick={() => {
+                    setShowUrlEditor(!showUrlEditor);
+                    setTargetUrlInput(connectedUrl);
+                  }}
+                >
+                  {showUrlEditor ? "Close" : "Change URL"}
+                </button>
+              </div>
+            </div>
+
+            {showUrlEditor && (
+              <div className="url-editor-box">
+                <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>
+                  Connect to localhost (http://127.0.0.1:3000) or your Vercel deployment:
+                </div>
+                <input
+                  type="url"
+                  className="url-input"
+                  value={targetUrlInput}
+                  onChange={(e) => setTargetUrlInput(e.target.value)}
+                  placeholder="https://ocean-ai-assistant.vercel.app or http://127.0.0.1:3000"
+                />
+                <div className="url-editor-actions">
+                  <button
+                    type="button"
+                    className="primary-button url-save-btn"
+                    onClick={async () => {
+                      if (!targetUrlInput.trim()) return;
+                      try {
+                        const newUrl = await window.assistant.setWebsiteUrl(targetUrlInput.trim());
+                        setConnectedUrl(newUrl);
+                        setShowUrlEditor(false);
+                        setNotice(`Connected workspace updated to: ${newUrl}. Click Reconnect if needed.`);
+                        void refreshShopContext();
+                      } catch (err) {
+                        setNotice(err instanceof Error ? err.message : "Failed to update URL");
+                      }
+                    }}
+                  >
+                    Save & Switch
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={async () => {
+                      try {
+                        const newUrl = await window.assistant.setWebsiteUrl("http://127.0.0.1:3000/");
+                        setConnectedUrl(newUrl);
+                        setTargetUrlInput(newUrl);
+                        setShowUrlEditor(false);
+                        setNotice("Switched connection to localhost (http://127.0.0.1:3000/).");
+                        void refreshShopContext();
+                      } catch (err) {
+                        setNotice(err instanceof Error ? err.message : "Failed to reset URL");
+                      }
+                    }}
+                  >
+                    Localhost (3000)
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
-            <button className="back-link" onClick={() => { setView("home"); setNotice(""); }}><span aria-hidden="true">←</span> Back to assistant</button>
+            {/* Back Button */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <button
+                className="back-link"
+                style={{ margin: 0 }}
+                onClick={() => {
+                  setView("home");
+                  setNotice("");
+                }}
+              >
+                <span aria-hidden="true">←</span> Back to home
+              </button>
+              <button
+                type="button"
+                className="header-home-btn"
+                title="Open တူတူတွက်မယ် workspace"
+                onClick={() => void window.assistant.openWebsite()}
+              >
+                <Icon name="home" size={14} /> Open workspace ↗
+              </button>
+            </div>
+
             {view === "chat" ? (
-              <section className="workflow" aria-labelledby="chat-heading">
-                <div className="workflow-heading"><span className="workflow-icon"><Icon name="sales" /></span><div><span className="eyebrow">A conversation, organized</span><h1 id="chat-heading">Chat to Order</h1></div></div>
-                <label className="field-label" htmlFor="customer-chat">Customer conversation</label>
-                <p className="field-hint">Copy messages from Messenger or TikTok, paste them here, select the customer messages, and review every extracted value.</p>
-                <div className="capture-actions">
-                  <button type="button" className="secondary-button" onClick={() => void pasteFromClipboard()}>Paste from clipboard</button>
-                  <span className="capture-source">Messenger · TikTok</span>
+              <section className="workflow" aria-label="Chat to Order">
+
+                {/* Mode Options: Paste from clipboard vs Write order */}
+                <div className="chat-mode-tabs">
+                  <button
+                    type="button"
+                    className={`mode-tab-btn ${chatInputMode === "paste" ? "active" : ""}`}
+                    onClick={() => {
+                      setChatInputMode("paste");
+                      void handlePasteAndGenerate();
+                    }}
+                  >
+                    📋 Paste from clipboard
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-tab-btn ${chatInputMode === "write" ? "active" : ""}`}
+                    onClick={() => setChatInputMode("write")}
+                  >
+                    ✏️ Write order
+                  </button>
                 </div>
-                <textarea id="customer-chat" className="chat-input" value={chat} maxLength={20_000} onChange={(event) => { const value = event.target.value; setChat(value); setSelectedMessageIds(new Set(splitConversationMessages(value).map((message) => message.id))); }} placeholder="Paste a customer conversation…" />
-                {conversationMessages.length > 0 && (
-                  <section className="message-selector" aria-label="Select messages for this order">
-                    <div className="selector-header"><strong>Choose messages for this order</strong><span>{selectedMessageIds.size}/{conversationMessages.length} selected</span></div>
-                    <div className="selector-actions"><button type="button" className="text-button" onClick={selectAllMessages}>Select all</button><button type="button" className="text-button" onClick={clearSelectedMessages}>Clear</button><button type="button" className="text-button" onClick={() => void copySelectedMessages()}>Copy selected</button></div>
-                    <div className="message-list">{conversationMessages.map((message) => <label className={`message-row ${selectedMessageIds.has(message.id) ? "message-row-selected" : ""}`} key={message.id}><input type="checkbox" checked={selectedMessageIds.has(message.id)} onChange={() => toggleMessage(message)} /><span><strong>{message.sender ?? "Customer message"}</strong><small>{message.text}</small></span></label>)}</div>
-                  </section>
-                )}
-                <button className="primary-button analyze-button" onClick={() => void analyzeChat()}>Create order from selected messages</button>
-                {hasOrder && (
-                  <section className="order-preview" aria-labelledby="order-heading">
-                    <div className="preview-header"><div><span className="eyebrow">Editable order draft</span><h2 id="order-heading">Review before confirmation</h2></div></div>
-                    {validationErrors.length > 0 && <div className="missing-card" role="status"><strong>Seller review needed</strong><span>Missing or invalid details stay visible until you correct them. Phone is required for delivery; use 0 for an unstated delivery fee or discount.</span></div>}
-                    <section className="reply-card" aria-labelledby="reply-heading">
-                      <div className="reply-card-header"><div><span className="eyebrow">Customer reply</span><h3 id="reply-heading">Ready to send</h3></div><span className="reply-state">{validationErrors.length > 0 ? "Needs details" : "Complete"}</span></div>
-                      <label className="reply-field"><span>Burmese</span><textarea value={visibleMyReply} onChange={(event) => setMyReply(event.target.value)} rows={3} /></label>
-                      <button type="button" className="secondary-button copy-button" onClick={() => void copyText(visibleMyReply, "Burmese reply copied to clipboard.")}>Copy Burmese reply</button>
-                      <label className="reply-field"><span>English</span><textarea value={visibleEnReply} onChange={(event) => setEnReply(event.target.value)} rows={3} /></label>
-                      <button type="button" className="secondary-button copy-button" onClick={() => void copyText(visibleEnReply, "English reply copied to clipboard.")}>Copy English reply</button>
-                    </section>
-                    <div className="field-grid">
-                      <label className="form-field"><span className="field-label-row">Customer name <SourceTag source={order.customer_name_source} /></span><input autoComplete="off" value={order.customer_name} onChange={(event) => editTextField("customer_name", event.target.value)} /></label>
-                      <label className="form-field"><span className="field-label-row">Phone <SourceTag source={order.customer_phone_source} /></span><input autoComplete="off" value={order.customer_phone} onChange={(event) => editTextField("customer_phone", event.target.value)} /></label>
-                      <label className="form-field field-wide"><span className="field-label-row">Delivery address <SourceTag source={order.delivery_address_source} /></span><textarea value={order.delivery_address} onChange={(event) => editTextField("delivery_address", event.target.value)} rows={2} /></label>
-                      <label className="form-field field-wide"><span className="field-label-row">Notes <SourceTag source={order.notes_source} /></span><textarea value={order.notes} onChange={(event) => editTextField("notes", event.target.value)} rows={2} /></label>
+
+                {/* Top Write Box: Quick access to type or add new messages */}
+                {chatInputMode === "write" && (
+                  <div className="top-write-container">
+                    <textarea
+                      id="customer-chat"
+                      className="chat-input"
+                      value={chat}
+                      maxLength={20_000}
+                      rows={hasOrder ? 3 : 4}
+                      onChange={(event) => setChat(event.target.value)}
+                      placeholder={
+                        hasOrder
+                          ? "Type new message or additional details (e.g. Daw Aye Aye, 09777222111, Kamayut)…"
+                          : "Type customer conversation or order details (e.g. Daw Aye Aye, 09777222111, Kamayut, Lipstick 2 pcs 25000 kyat)…"
+                      }
+                    />
+                    <div style={{ marginTop: "6px", display: "flex", gap: "8px" }}>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        style={{ flex: 1 }}
+                        disabled={isExtracting || !chat.trim()}
+                        onClick={() => void generateOrderFromText(chat)}
+                      >
+                        {isExtracting
+                          ? "Generating voucher…"
+                          : hasOrder
+                          ? "Update Voucher with New Message"
+                          : "Generate Voucher"}
+                      </button>
+                      {hasOrder && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          title="Clear and start new voucher"
+                          onClick={() => {
+                            setChat("");
+                            setHasOrder(false);
+                            setConfirmed(false);
+                            setSavedOrder(null);
+                            setOrder(emptyEditableOrder());
+                          }}
+                        >
+                          + New
+                        </button>
+                      )}
                     </div>
-                    <div className="items-heading"><strong>Products</strong><button type="button" className="text-button" onClick={addItem}>+ Add product</button></div>
-                    <div className="draft-items">{order.items.map((item, index) => <div className="draft-item" key={item.key}><div className="draft-item-title"><span>Item {index + 1}</span>{order.items.length > 1 && <button type="button" className="text-button danger-text" onClick={() => removeItem(index)}>Remove</button>}</div><label className="form-field"><span className="field-label-row">Product <SourceTag source={item.product_name_source} /></span><input value={item.product_name} onChange={(event) => editItem(index, "product_name", event.target.value)} /></label><div className="field-grid item-fields"><label className="form-field"><span className="field-label-row">Quantity <SourceTag source={item.quantity_source} /></span><input inputMode="numeric" type="number" min="1" max="1000000" value={item.quantity} onChange={(event) => editItem(index, "quantity", event.target.value)} /></label><label className="form-field"><span className="field-label-row">Unit price (MMK) <SourceTag source={item.unit_price_mmk_source} /></span><input inputMode="numeric" type="number" min="0" step="1" value={item.unit_price_mmk} onChange={(event) => editItem(index, "unit_price_mmk", event.target.value)} /></label></div></div>)}</div>
-                    <div className="field-grid totals-fields"><label className="form-field"><span className="field-label-row">Delivery fee (MMK) <SourceTag source={order.delivery_fee_mmk_source} /></span><input inputMode="numeric" type="number" min="0" step="1" value={order.delivery_fee_mmk} onChange={(event) => editTextField("delivery_fee_mmk", event.target.value)} /></label><label className="form-field"><span className="field-label-row">Discount (MMK) <SourceTag source={order.discount_mmk_source} /></span><input inputMode="numeric" type="number" min="0" step="1" value={order.discount_mmk} onChange={(event) => editTextField("discount_mmk", event.target.value)} /></label></div>
-                    <div className="line-total"><span>Deterministic MMK total</span><strong>{formatMmk(totals.total_mmk)}</strong></div><p className="total-breakdown">Subtotal: {formatMmk(totals.subtotal_mmk)} · Delivery and discount are separate fields.</p>
-                    <button className="primary-button confirm-button" disabled={confirmed} onClick={confirmOrder}>{confirmed ? "Order confirmed" : "Confirm order"}</button>
-                    {confirmed && <div className="confirmation-note" role="status"><img className="reaction-mascot" src={dolphin} alt="" /><span><strong>Order confirmed</strong><small>Your reviewed order is ready in the workspace.</small></span></div>}
-                  </section>
+                  </div>
+                )}
+
+                {/* Default Paste Mode: One-click paste action */}
+                {!hasOrder && chatInputMode === "paste" && (
+                  <div className="paste-mode-container">
+                    <div
+                      className="paste-mode-card"
+                      onClick={() => void handlePasteAndGenerate()}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          void handlePasteAndGenerate();
+                        }
+                      }}
+                    >
+                      <div className="paste-card-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                        </svg>
+                      </div>
+                      <strong className="paste-card-title">Paste Customer Order</strong>
+                      <p className="paste-card-desc">
+                        Copy customer chat from Facebook or TikTok, then click here to generate voucher.
+                      </p>
+                      <button
+                        type="button"
+                        className="primary-button paste-action-btn"
+                        disabled={isExtracting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handlePasteAndGenerate();
+                        }}
+                      >
+                        {isExtracting ? "Analyzing & Generating Voucher…" : "📋 Paste & Generate Voucher"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Direct Voucher View without scrolling review form */}
+                {hasOrder && (
+                  <>
+                    <VoucherCard
+                      order={savedOrder || currentVoucherOrder}
+                      shopName={savedShopName}
+                      sourceText={chat}
+                      isEditing={showEditForm}
+                      onEdit={() => setShowEditForm(!showEditForm)}
+                      onSaveToShop={confirmOrder}
+                      isSavingToShop={isSaving}
+                      isSavedToShop={confirmed}
+                    >
+
+                      {/* Collapsible Edit Form directly below taskbar */}
+                      {showEditForm && (
+                        <div className="voucher-edit-drawer no-print">
+                          <div className="voucher-edit-header">
+                            <h4>Edit Order Details (အချက်အလက် ပြင်ဆင်ရန်)</h4>
+                            <button
+                              type="button"
+                              className="voucher-edit-done-btn"
+                              onClick={() => setShowEditForm(false)}
+                            >
+                              ✓ Done
+                            </button>
+                          </div>
+                          <div className="field-grid">
+                            <label className="form-field">
+                              <span className="field-label-row">
+                                Customer name <SourceTag source={order.customer_name_source} />
+                              </span>
+                              <input
+                                autoComplete="off"
+                                value={order.customer_name}
+                                onChange={(event) => editTextField("customer_name", event.target.value)}
+                              />
+                            </label>
+                            <label className="form-field">
+                              <span className="field-label-row">
+                                Phone <SourceTag source={order.customer_phone_source} />
+                              </span>
+                              <input
+                                autoComplete="off"
+                                value={order.customer_phone}
+                                onChange={(event) => editTextField("customer_phone", event.target.value)}
+                              />
+                            </label>
+                            <label className="form-field field-wide">
+                              <span className="field-label-row">
+                                Delivery address <SourceTag source={order.delivery_address_source} />
+                              </span>
+                              <textarea
+                                value={order.delivery_address}
+                                onChange={(event) => editTextField("delivery_address", event.target.value)}
+                                rows={2}
+                              />
+                            </label>
+                            <label className="form-field field-wide">
+                              <span className="field-label-row">
+                                Notes <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>(Optional)</span>
+                              </span>
+                              <input
+                                value={order.notes}
+                                onChange={(event) => editTextField("notes", event.target.value)}
+                                placeholder="Delivery instructions or buyer notes"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="items-heading" style={{ marginTop: "6px" }}>
+                            <strong>Items (ပစ္စည်းများ)</strong>
+                            <button type="button" className="text-button" onClick={addItem}>
+                              + Add item
+                            </button>
+                          </div>
+                          <div className="draft-items">
+                            {order.items.map((item, index) => (
+                              <div className="draft-item" key={item.key}>
+                                <div className="draft-item-title">
+                                  <span>Item {index + 1}</span>
+                                  {order.items.length > 1 && (
+                                    <button
+                                      type="button"
+                                      className="text-button danger-text"
+                                      onClick={() => removeItem(index)}
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+                                <label className="form-field">
+                                  <span className="field-label-row">Product</span>
+                                  <input
+                                    value={item.product_name}
+                                    onChange={(event) => editItem(index, "product_name", event.target.value)}
+                                  />
+                                </label>
+                                <div className="field-grid item-fields">
+                                  <label className="form-field">
+                                    <span className="field-label-row">Qty</span>
+                                    <input
+                                      inputMode="numeric"
+                                      type="number"
+                                      min="1"
+                                      value={item.quantity}
+                                      onChange={(event) => editItem(index, "quantity", event.target.value)}
+                                    />
+                                  </label>
+                                  <label className="form-field">
+                                    <span className="field-label-row">Unit Price (MMK)</span>
+                                    <input
+                                      inputMode="numeric"
+                                      type="number"
+                                      min="0"
+                                      value={item.unit_price_mmk}
+                                      onChange={(event) => editItem(index, "unit_price_mmk", event.target.value)}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="field-grid totals-fields" style={{ marginTop: "4px" }}>
+                            <label className="form-field">
+                              <span className="field-label-row">
+                                Delivery fee (MMK) <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>(Optional)</span>
+                              </span>
+                              <input
+                                inputMode="numeric"
+                                type="number"
+                                min="0"
+                                value={order.delivery_fee_mmk}
+                                onChange={(event) => editTextField("delivery_fee_mmk", event.target.value)}
+                                placeholder="0"
+                              />
+                            </label>
+                            <label className="form-field">
+                              <span className="field-label-row">
+                                Discount (MMK) <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>(Optional)</span>
+                              </span>
+                              <input
+                                inputMode="numeric"
+                                type="number"
+                                min="0"
+                                value={order.discount_mmk}
+                                onChange={(event) => editTextField("discount_mmk", event.target.value)}
+                                placeholder="0"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </VoucherCard>
+
+                    {/* Customer Reply Section - Chosen according to pasted sentences */}
+                    <section className="customer-reply-section">
+                      <div className="customer-reply-title">
+                        <span>{isBurmese ? "ဝယ်သူထံ အကြောင်းပြန်စာ" : "Customer Reply"}</span>
+                      </div>
+                      <div className="reply-item-box">
+                        <textarea
+                          className="reply-textarea"
+                          value={isBurmese ? visibleMyReply : visibleEnReply}
+                          onChange={(e) => {
+                            if (isBurmese) setMyReply(e.target.value);
+                            else setEnReply(e.target.value);
+                          }}
+                          rows={3}
+                        />
+                        <button
+                          type="button"
+                          className="copy-reply-btn"
+                          onClick={() =>
+                            void copyText(
+                              isBurmese ? visibleMyReply : visibleEnReply,
+                              isBurmese ? "အကြောင်းပြန်စာ ကူးယူပြီးပါပြီ" : "Reply copied to clipboard",
+                            )
+                          }
+                        >
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                            style={{ marginRight: 5, verticalAlign: -1 }}
+                          >
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                          {isBurmese ? "စာသား ကူးယူမည်" : "Copy Reply"}
+                        </button>
+                      </div>
+                    </section>
+
+                    {/* Reset Button */}
+                    <div style={{ marginTop: "12px", textAlign: "center" }}>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ minHeight: "36px", fontSize: "0.75rem" }}
+                        onClick={() => {
+                          setHasOrder(false);
+                          setConfirmed(false);
+                          setOrder(emptyEditableOrder());
+                          setOrderId(null);
+                          orderIdRef.current = null;
+                          setSavedOrder(null);
+                          setChat("");
+                          setShowEditForm(false);
+                          setNotice("Ready for new order.");
+                        }}
+                      >
+                        + New Order (အသစ်ပြုလုပ်မည်)
+                      </button>
+                    </div>
+                  </>
                 )}
               </section>
             ) : (
               <section className="workflow" aria-labelledby="match-heading">
-                <div className="workflow-heading"><span className="workflow-icon"><Icon name="wallet" /></span><div><span className="eyebrow">Connect a payment</span><h1 id="match-heading">Match Payment to Order</h1></div></div>
-                <div className="security-note"><strong>Review before confirming</strong><p>Check your trusted payment records. A screenshot alone cannot confirm received funds.</p></div>
-                <div className="upload-actions">
-                  <label className="primary-button file-button">Choose transaction image<input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => readLocalImage(event.currentTarget.files?.[0])} /></label>
-                  <button type="button" className="secondary-button" onClick={() => void pasteTransactionImage()}>Paste copied image</button>
+                <div className="workflow-heading">
+                  <span className="workflow-icon"><Icon name="wallet" /></span>
+                  <div>
+                    <h1 id="match-heading">Match Payment to Order</h1>
+                  </div>
                 </div>
-                <div className="image-paste-zone" tabIndex={0} role="group" aria-label="Paste a transaction screenshot" onPaste={(event) => {
-                  const file = Array.from(event.clipboardData.files).find(item => item.type.startsWith("image/"));
-                  if (file) { event.preventDefault(); readLocalImage(file); }
-                  else setNotice("Copy a transaction screenshot and paste it here, or use Paste copied image.");
-                }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
-                  event.preventDefault();
-                  readLocalImage(event.dataTransfer.files?.[0]);
-                }}>Click here and press Ctrl+V, or drop a transaction screenshot</div>
-                {screenshot && <><figure className="image-preview"><img src={screenshot} alt="Selected transaction image" /><figcaption><span>Transaction image</span><span>{screenshotName}</span></figcaption></figure><PaymentReview key={screenshotRevision} image={screenshot} onNotice={setNotice} /></>}
+                <div className="security-note">
+                  <strong>Review before confirming</strong>
+                  <p>Check your payment records. A screenshot alone cannot confirm received funds.</p>
+                </div>
+                <div className="upload-actions">
+                  <label className="primary-button file-button">
+                    Choose transaction image
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(event) => readLocalImage(event.currentTarget.files?.[0])}
+                    />
+                  </label>
+                  <button type="button" className="secondary-button" onClick={() => void pasteTransactionImage()}>
+                    Paste copied image
+                  </button>
+                </div>
+                <div
+                  className="image-paste-zone"
+                  tabIndex={0}
+                  role="group"
+                  aria-label="Paste a transaction screenshot"
+                  onPaste={(event) => {
+                    const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
+                    if (file) {
+                      event.preventDefault();
+                      readLocalImage(file);
+                    } else {
+                      setNotice("Copy a transaction screenshot and paste it here, or use Paste copied image.");
+                    }
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    readLocalImage(event.dataTransfer.files?.[0]);
+                  }}
+                >
+                  Click here and press Ctrl+V, or drop a transaction screenshot
+                </div>
+                {screenshot && (
+                  <>
+                    <figure className="image-preview">
+                      <img src={screenshot} alt="Selected transaction image" />
+                      <figcaption>
+                        <span>Transaction image</span>
+                        <span>{screenshotName}</span>
+                      </figcaption>
+                    </figure>
+                    <PaymentReview key={screenshotRevision} image={screenshot} onNotice={setNotice} />
+                  </>
+                )}
               </section>
             )}
           </>
         )}
         {notice && <p className="status-message" role="status">{notice}</p>}
-        <footer className="panel-footer"><span className="footer-pulse" aria-hidden="true" /> တူတူတွက်မယ် is ready</footer>
+        <footer className="panel-footer">
+          <span className="footer-pulse" aria-hidden="true" /> တူတူတွက်မယ်
+        </footer>
       </div>
     </main>
   );

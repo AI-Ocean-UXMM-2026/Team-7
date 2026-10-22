@@ -107,3 +107,25 @@ test("accepts Burmese labels and Burmese digit quantities", () => {
   assert.equal(result.items[0]?.quantity, 2);
   assert.equal(result.items[0]?.unit_price_mmk, 35000);
 });
+
+test("extracts multiple phone numbers, clean product names without conversation filler, and multiple products", () => {
+  const result = parseSimulatedChat([
+    "မင်္ဂလာပါ အစ်မ",
+    "အမည် ဒေါ်အေးအေး",
+    "ဖုန်း - 09 777 222 111 / 09 888 333 222",
+    "လိပ်စာ - လှည်းတန်းလမ်း၊ ကမာရွတ်မြို့နယ်",
+    "lipstick ပန်းရောင် ၂ ဘူး ယူမယ်နော် တစ်ဘူး ၂၅,၀၀၀ ကျပ်",
+    "foundation ၁ ဘူး ၃၅,၀၀၀ ကျပ်",
+  ].join("\n"));
+  assert.equal(result.customer_name, "ဒေါ်အေးအေး");
+  assert.equal(result.customer_phone, "09 777 222 111 / 09 888 333 222");
+  assert.equal(result.delivery_address, "လှည်းတန်းလမ်း၊ ကမာရွတ်မြို့နယ်");
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0]?.product_name, "lipstick ပန်းရောင်");
+  assert.equal(result.items[0]?.quantity, 2);
+  assert.equal(result.items[0]?.unit_price_mmk, 25000);
+  assert.equal(result.items[1]?.product_name, "foundation");
+  assert.equal(result.items[1]?.quantity, 1);
+  assert.equal(result.items[1]?.unit_price_mmk, 35000);
+});
+

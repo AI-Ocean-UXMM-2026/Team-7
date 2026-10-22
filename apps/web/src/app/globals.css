@@ -4916,3 +4916,416 @@ html,
 .assistant-connect-actions .btn-secondary { flex: 1; text-align: center; padding: .8rem 1rem; border: 1px solid #cbdceb; border-radius: .65rem; background: #f7fafc; color: #245dd0; font-weight: 700; text-decoration: none; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
 .assistant-connect-actions .btn-secondary:hover { background: #eef4fb; border-color: #245dd0; }
 
+/* =========================================================================
+   Mobbin-inspired Split Screen Login & Showcase (Compact No-Scroll)
+   ========================================================================= */
+.mobbin-auth-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: radial-gradient(circle at 10% 20%, #edf4fc 0%, #f4f8fd 40%, #eaf1fa 100%);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.mobbin-auth-card {
+  width: min(100%, 940px);
+  max-height: calc(100vh - 2rem);
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  background: #ffffff;
+  border: 1px solid #dce7f5;
+  border-radius: 24px;
+  box-shadow: 0 20px 50px -10px rgba(23, 44, 120, 0.11), 0 4px 16px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Left Panel: Clean Form */
+.mobbin-form-panel {
+  padding: 1.75rem 2.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.mobbin-header-clean {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+  text-align: center;
+}
+
+.mobbin-logo-circle {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 0.65rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+}
+
+.mobbin-title-serif {
+  font-family: var(--font-serif, "Newsreader", "Playfair Display", Georgia, "Times New Roman", serif);
+  font-size: 2.15rem;
+  font-weight: 500;
+  color: #18181b;
+  letter-spacing: -0.025em;
+  text-align: center;
+  margin: 0 0 1.15rem 0;
+  line-height: 1.1;
+}
+
+/* Google OAuth Button - Clean Card */
+.mobbin-google-card-btn {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #1f2937;
+  font-size: 0.88rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.mobbin-google-card-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.mobbin-google-card-btn:focus-visible {
+  outline: 2px solid #18181b;
+  outline-offset: 2px;
+}
+
+/* Divider with tracked text */
+.mobbin-divider-clean {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.1rem 0;
+  color: #6b7280;
+  font-size: 0.78rem;
+  font-weight: 450;
+}
+
+.mobbin-divider-clean::before,
+.mobbin-divider-clean::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.mobbin-divider-clean span {
+  padding: 0 0.85rem;
+}
+
+/* Form inputs - Clean Boxed Card Style */
+.mobbin-form-clean {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mobbin-field-box {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 12px 7px 12px;
+  background: #ffffff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.mobbin-field-box:focus-within {
+  border-color: #09090b;
+  box-shadow: 0 0 0 1px #09090b;
+}
+
+.mobbin-box-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #6b7280;
+  line-height: 1.1;
+  margin-bottom: 3px;
+}
+
+.mobbin-box-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  line-height: 1.1;
+  margin-bottom: 3px;
+}
+
+.mobbin-eye-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.mobbin-eye-toggle:hover {
+  color: #09090b;
+}
+
+.mobbin-box-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font-size: 0.92rem;
+  color: #111827;
+  font-family: inherit;
+}
+
+.mobbin-box-input::placeholder {
+  color: #9ca3af;
+}
+
+/* Forgot password link - centered & underlined */
+.mobbin-forgot-wrap {
+  text-align: center;
+  margin: 0.4rem 0 0.65rem 0;
+}
+
+.mobbin-forgot-link-center {
+  font-size: 0.82rem;
+  color: #6b7280;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 450;
+  transition: color 0.15s ease;
+}
+
+.mobbin-forgot-link-center:hover {
+  color: #111827;
+}
+
+/* Submit button - Dark solid rounded rectangle */
+.mobbin-submit-btn-dark {
+  width: 100%;
+  height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: #09090b;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobbin-submit-btn-dark:hover:not(:disabled) {
+  background: #27272a;
+}
+
+.mobbin-submit-btn-dark:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* Bottom switch text - clean & centered */
+.mobbin-switch-text-clean {
+  font-size: 0.84rem;
+  color: #6b7280;
+  text-align: center;
+  margin: 0.85rem 0 0 0;
+}
+
+.mobbin-switch-text-clean a {
+  color: #09090b;
+  font-weight: 550;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Right Panel: Blue Ocean Showcase */
+.mobbin-showcase-panel {
+  background: linear-gradient(150deg, #1d4ed8 0%, #1e40af 45%, #0f172a 100%);
+  color: #ffffff;
+  padding: 1.75rem 2.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Ambient glow in background */
+.mobbin-showcase-panel::before {
+  content: "";
+  position: absolute;
+  top: -20%;
+  right: -20%;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.25) 0%, rgba(30, 64, 175, 0) 70%);
+  pointer-events: none;
+}
+
+/* Water Stage with Animated Dolphin and Water Waves */
+.mobbin-water-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.mobbin-water-dolphin {
+  width: 138px;
+  height: 138px;
+  object-fit: contain;
+  animation: dolphinSwim 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.35));
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes dolphinSwim {
+  0%, 100% {
+    transform: translateY(0px) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
+.mobbin-water-waves {
+  position: relative;
+  width: 180px;
+  height: 28px;
+  margin-top: -12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+}
+
+.mobbin-water-waves .wave {
+  position: absolute;
+  border: 1.5px solid rgba(56, 189, 248, 0.75);
+  border-radius: 50%;
+  animation: waterRipple 2.8s cubic-bezier(0.1, 0.45, 0.1, 1) infinite;
+  opacity: 0;
+}
+
+.mobbin-water-waves .wave-1 {
+  width: 75px;
+  height: 15px;
+  animation-delay: 0s;
+}
+
+.mobbin-water-waves .wave-2 {
+  width: 130px;
+  height: 20px;
+  animation-delay: 0.9s;
+}
+
+.mobbin-water-waves .wave-3 {
+  width: 180px;
+  height: 25px;
+  animation-delay: 1.8s;
+}
+
+@keyframes waterRipple {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+    border-color: rgba(56, 189, 248, 0.85);
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+    border-color: rgba(147, 197, 253, 0.1);
+  }
+}
+
+/* Functions Checklist */
+.mobbin-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.mobbin-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  line-height: 1.35;
+}
+
+.mobbin-check-icon {
+  flex-shrink: 0;
+}
+
+.mobbin-checklist-item strong {
+  color: #ffffff;
+  font-weight: 650;
+}
+
+/* Responsive query */
+@media (max-width: 880px) {
+  .mobbin-auth-card {
+    grid-template-columns: 1fr;
+    max-height: none;
+    border-radius: 20px;
+  }
+  .mobbin-form-panel {
+    padding: 1.75rem 1.5rem;
+  }
+  .mobbin-showcase-panel {
+    padding: 1.75rem 1.5rem;
+    order: -1;
+  }
+  .mobbin-water-dolphin {
+    width: 70px;
+    height: 70px;
+  }
+  .mobbin-title {
+    font-size: 1.5rem;
+  }
+}
+
