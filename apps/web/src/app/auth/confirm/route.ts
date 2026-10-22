@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { authDestination, getAppUrl } from "@/lib/auth";
-import { createSessionCookie } from "@/lib/auth/session";
+import { createSessionCookie, SESSION_COOKIE } from "@/lib/auth/session";
 import { ensureLocalProfile, type LocalAuthUser } from "@/lib/auth/local-profile";
 
 export async function GET(request: NextRequest) {
@@ -47,11 +47,21 @@ export async function GET(request: NextRequest) {
 
   if (type !== "recovery") {
     ensureLocalProfile(user);
-    await createSessionCookie(user.id);
+    // Capture the session token so we can set it explicitly on the redirect
+    // response. NextResponse.redirect() does NOT automatically carry cookies
+    // written to the request-scoped cookie store by the Supabase client or
+    // by createSessionCookie — this was the root cause of the Google OAuth loop.
+    const sessionToken = await createSessionCookie(user.id);
+    const response = NextResponse.redirect(new URL(next, origin));
+    response.cookies.set(SESSION_COOKIE, sessionToken, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: origin.startsWith("https"),
+      maxAge: 60 * 60 * 24 * 7,
+    });
+    return response;
   }
 
-  const destination = type === "recovery"
-    ? "/login/reset-password"
-    : next;
-  return NextResponse.redirect(new URL(destination, origin));
+  return NextResponse.redirect(new URL("/login/reset-password", origin));
 }

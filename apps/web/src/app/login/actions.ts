@@ -53,6 +53,11 @@ export async function signInAction(
       const supabase = await createClient();
       const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
       if (error || !data.user) {
+        // Give a specific message when the email hasn't been confirmed yet
+        if (error?.message?.toLowerCase().includes("email not confirmed") ||
+            error?.message?.toLowerCase().includes("not confirmed")) {
+          return { error: "Please confirm your email first. Check your inbox for the confirmation link we sent when you signed up." };
+        }
         // FAIL CLOSED: Never fall back to local password bypass when provider rejects
         return { error: "Invalid email or password." };
       }
@@ -150,7 +155,12 @@ export async function signUpAction(
         redirect(nextPath);
       }
 
-      return { success: "Account created. Check your email to confirm, then sign in." };
+      // If email confirmation is still required, tell the user clearly
+      const confirmRequired = loginRes.error?.message?.toLowerCase().includes("not confirmed") ||
+        loginRes.error?.message?.toLowerCase().includes("email not confirmed");
+      return confirmRequired
+        ? { success: "Account created! Check your inbox for a confirmation email, then sign in." }
+        : { success: "Account created. Check your email to confirm, then sign in." };
     } catch (e: unknown) {
       if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) throw e;
       return { error: "Account creation failed. Try again later." };
