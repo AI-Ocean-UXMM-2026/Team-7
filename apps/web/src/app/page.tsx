@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { myanmarDate } from "@ocean/contracts";
 import { BusinessSurface } from "@/components/business-surface";
 import { DashboardBanner } from "@/components/dashboard-banner";
+import { DashboardScrollExperience } from "@/components/dashboard-scroll-experience";
 import { getCurrentSession, getAuthorizedShopSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,8 @@ export default async function DashboardPage({
   const shopId = authShop.shop.id;
 
   return (
-    <div className="page-stack">
+    <div className="page-stack dashboard-anchor-canvas">
+      <DashboardScrollExperience />
       <DashboardBanner userName={authShop.user.displayName || "Seller"} shopId={shopId} />
       <BusinessSurface
         key={shopId}

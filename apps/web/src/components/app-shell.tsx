@@ -17,11 +17,11 @@ import {
   type ShellLanguage,
 } from "@/lib/shell-ui";
 
-type NavigationKey = "dashboard" | "sales" | "finance" | "settings";
+type NavigationKey = "dashboard" | "sales" | "finance" | "settings" | "plans";
 type NavigationItem = {
   href: string;
   labelKey: NavigationKey;
-  mobileKey: "homeMobile" | "salesMobile" | "financeMobile" | "settingsMobile";
+  mobileKey: "homeMobile" | "salesMobile" | "financeMobile" | "settingsMobile" | "plansMobile";
   icon: IconName;
 };
 
@@ -29,14 +29,13 @@ const destinations: NavigationItem[] = [
   { href: "/", labelKey: "dashboard", mobileKey: "homeMobile", icon: "home" },
   { href: "/sales", labelKey: "sales", mobileKey: "salesMobile", icon: "sales" },
   { href: "/finance", labelKey: "finance", mobileKey: "financeMobile", icon: "finance" },
+  { href: "/plans", labelKey: "plans", mobileKey: "plansMobile", icon: "plans" },
   { href: "/settings", labelKey: "settings", mobileKey: "settingsMobile", icon: "settings" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const { language } = useShellLanguage();
-  const labels = shellLabels(language);
 
   if (
     pathname === "/login" ||
@@ -50,76 +49,44 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={`app-shell${collapsed ? " is-collapsed" : ""}`}>
+    <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <aside className="sidebar" aria-label="Workspace sidebar">
-        <div className="sidebar-top">
-          <Suspense fallback={<Link href="/" className="brand" aria-label="တူတူတွက်မယ် Home">တူတူတွက်မယ်</Link>}>
-            <ShopAwareHomeLink className="brand" aria-label="တူတူတွက်မယ် Home">
-              <Image className="brand-dolphin" src={dolphin} alt="" width={42} height={42} priority />
-              <span className="sidebar-label">
-                တူတူတွက်မယ်<span className="brand-ai">BUSINESS ASSISTANT</span>
-              </span>
-            </ShopAwareHomeLink>
-          </Suspense>
-          <button
-            type="button"
-            className="sidebar-toggle"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            aria-controls="desktop-navigation"
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            <Icon name="menu" />
-          </button>
-        </div>
-        <p className="sidebar-caption sidebar-label">{labels.workspace}</p>
-        <nav id="desktop-navigation" aria-label="Primary navigation">
-          <Suspense fallback={<NavigationItems pathname={pathname} collapsed={collapsed} language={language} />}>
-            <SourceNavigation pathname={pathname} collapsed={collapsed} language={language} />
-          </Suspense>
-        </nav>
-        <div className="sidebar-promo-card">
-          <div className="sidebar-promo-badge">
-            <span className="sidebar-promo-icon">📄</span>
-          </div>
-          <div className="sidebar-promo-copy">
-            <strong>PDF &amp; Reports</strong>
-            <p>Annual &amp; monthly exports</p>
-          </div>
-          <button
-            type="button"
-            className="sidebar-promo-btn"
-            onClick={() => window.dispatchEvent(new CustomEvent("open-saya-assistant", { detail: { view: "chat" } }))}
-          >
-            AI Assistant
-          </button>
-        </div>
-        <div className="sidebar-footer">
-          <Suspense fallback={<Link className="sidebar-workspace-link" href="/workspace" aria-label={labels.switchWorkspace}><Icon name="home" /><span className="sidebar-label">{labels.switchWorkspace}</span></Link>}>
-            <WorkspaceSwitchLink pathname={pathname} label={labels.switchWorkspace} />
-          </Suspense>
-        </div>
-      </aside>
 
       <div className="workspace">
         <header className="topbar">
-          <Suspense fallback={<Link href="/" className="mobile-brand">တူတူတွက်မယ်</Link>}>
-            <ShopAwareHomeLink className="mobile-brand">တူတူတွက်မယ်</ShopAwareHomeLink>
-          </Suspense>
-          {pathname === "/demo" ? (
-            <span className="demo-shell-context">Synthetic sample dashboard</span>
-          ) : (
-            <Suspense fallback={<SearchFallback />}>
-              <ShopSearch />
+          <div className="topbar-left-zone">
+            <Suspense fallback={
+              <Link href="/" className="topbar-logo-btn" aria-label="Home">
+                <Image className="topbar-dolphin-img" src={dolphin} alt="Logo" width={38} height={38} priority />
+              </Link>
+            }>
+              <ShopAwareHomeLink className="topbar-logo-btn" aria-label="Home">
+                <Image className="topbar-dolphin-img" src={dolphin} alt="Logo" width={38} height={38} priority />
+              </ShopAwareHomeLink>
             </Suspense>
-          )}
-          <div className="topbar-right">
-            <Suspense fallback={null}>
-              <TopbarControls pathname={pathname} language={language} />
-            </Suspense>
+
+            <nav className="topbar-nav" aria-label="Primary navigation">
+              <Suspense fallback={<TopNavigationItems pathname={pathname} language={language} />}>
+                <SourceTopNavigation pathname={pathname} language={language} />
+              </Suspense>
+            </nav>
+          </div>
+
+          <div className="topbar-right-zone">
+            {pathname === "/demo" ? (
+              <span className="demo-shell-context">Synthetic sample dashboard</span>
+            ) : (
+              <Suspense fallback={<SearchFallback />}>
+                <ShopSearch />
+              </Suspense>
+            )}
+            <div className="topbar-right-controls">
+              <Suspense fallback={null}>
+                <TopbarControls pathname={pathname} language={language} />
+              </Suspense>
+            </div>
           </div>
         </header>
 
@@ -151,7 +118,8 @@ function SearchFallback() {
   return (
     <form className="topbar-search" role="search" action="/sales">
       <Icon name="search" />
-      <input type="search" name="q" aria-label="Search orders, customers or products" placeholder="Search orders, customers or products" />
+      <input type="search" name="q" aria-label="Search orders, customers or products" placeholder="Search..." />
+      <kbd className="kbd-shortcut">Ctrl K</kbd>
       <button className="topbar-search-submit" type="submit">Search</button>
     </form>
   );
@@ -233,7 +201,7 @@ function ShopSearchForm({ shopId, initialQuery }: { shopId: string | null; initi
         aria-label="Search orders, customers, phones or products"
         aria-invalid={!!error}
         aria-describedby={error ? "topbar-search-error" : undefined}
-        placeholder="Search orders, customers or products"
+        placeholder="Search..."
         onChange={(event) => {
           setQuery(event.target.value);
           if (error) setError("");
@@ -281,7 +249,7 @@ function TopbarControls({ pathname, language }: { pathname: string; language: Sh
         </Link>
       ) : (
         <>
-      <NotificationsControl key={shopId ?? "default-shop"} shopId={shopId} />
+      <NotificationsControl key={shopId ?? "default-shop"} shopId={shopId} language={language} />
       <WorkspaceBadge href={workspaceHref} shopId={shopId} switchLabel={labels.switchWorkspace} />
       <button
         type="button"
@@ -337,7 +305,7 @@ function WorkspaceBadge({
   );
 }
 
-function NotificationsControl({ shopId }: { shopId: string | null }) {
+function NotificationsControl({ shopId, language }: { shopId: string | null; language: ShellLanguage }) {
   const provider = useMemo(() => createLiveProvider(shopId ?? undefined), [shopId]);
   const [open, setOpen] = useState(false);
   const [loadState, setLoadState] = useState<
@@ -436,39 +404,73 @@ function NotificationsControl({ shopId }: { shopId: string | null }) {
       </button>
       {open && (
         <section
-          className="attention-panel"
+          className="attention-panel topbar-attention-panel"
           id="workspace-attention-panel"
           aria-labelledby="workspace-attention-title"
           aria-busy={loadState.status === "loading"}
         >
           <div className="attention-panel-heading">
             <div>
-              <h2 id="workspace-attention-title">Needs attention</h2>
-              <p>Based on current shop records.</p>
+              <h2 id="workspace-attention-title">
+                {language === "my" ? "စစ်ဆေးရန် အချက်များ" : "Needs attention"}
+              </h2>
+              <p>
+                {language === "my" ? "ဆိုင်မှတ်တမ်းများအပေါ် အခြေခံသည်" : "Based on current shop records."}
+              </p>
             </div>
-            <button type="button" className="attention-refresh" onClick={() => void load()} disabled={loadState.status === "loading"}>
-              Refresh
+            <button
+              type="button"
+              className="attention-refresh-btn"
+              onClick={() => void load()}
+              disabled={loadState.status === "loading"}
+            >
+              {loadState.status === "loading"
+                ? (language === "my" ? "ရယူနေသည်…" : "Loading…")
+                : (language === "my" ? "ပြန်လည်စစ်ဆေးရန်" : "Refresh")}
             </button>
           </div>
           {loadState.status === "idle" || loadState.status === "loading" ? (
-            <p className="attention-state" role="status">Loading current records…</p>
+            <p className="attention-state" role="status">
+              {language === "my" ? "မှတ်တမ်းများကို ရယူနေပါသည်…" : "Loading current records…"}
+            </p>
           ) : loadState.status === "error" ? (
             <div className="attention-state" role="alert">
               <p>{loadState.message}</p>
-              <button type="button" className="text-button" onClick={() => void load()}>Retry loading</button>
+              <button type="button" className="text-button" onClick={() => void load()}>
+                {language === "my" ? "ထပ်မံကြိုးစားရန်" : "Retry loading"}
+              </button>
             </div>
           ) : loadState.items.length === 0 ? (
-            <p className="attention-state" role="status">No orders or financial records need attention right now.</p>
+            <p className="attention-state" role="status">
+              {language === "my"
+                ? "လက်ရှိ စစ်ဆေးရန် အော်ဒါ သို့မဟုတ် ဘဏ္ဍာရေး မှတ်တမ်း မရှိပါ။"
+                : "No orders or financial records need attention right now."}
+            </p>
           ) : (
-            <ul className="attention-list">
-              {loadState.items.map((item) => (
-                <li key={item.id}>
-                  <Link href={linkForItem(item)} onClick={() => setOpen(false)}>
-                    <strong>{item.title}</strong>
-                    <span>{item.detail}</span>
-                  </Link>
-                </li>
-              ))}
+            <ul className="topbar-attention-list">
+              {loadState.items.map((item) => {
+                const isHigh = item.id.includes("unpaid") || item.id.includes("draft");
+                return (
+                  <li key={item.id} className="topbar-attention-item">
+                    <Link
+                      href={linkForItem(item)}
+                      className="topbar-attention-link"
+                      onClick={() => setOpen(false)}
+                    >
+                      <div className={`topbar-attention-badge ${isHigh ? "is-warning" : "is-info"}`}>
+                        <Icon name={item.icon === "orders" ? "sales" : item.icon === "wallet" ? "finance" : "home"} />
+                      </div>
+                      <div className="topbar-attention-content">
+                        <strong className="topbar-attention-title">{item.title}</strong>
+                        <span className="topbar-attention-detail">{item.detail}</span>
+                      </div>
+                      <span className="topbar-attention-action">
+                        {language === "my" ? "စစ်ဆေးမည် →" : "Review →"}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -480,6 +482,47 @@ function NotificationsControl({ shopId }: { shopId: string | null }) {
 function AssistantDock() {
   const params = useSearchParams();
   return <SayaAssistant shopId={params.get("shop") ?? undefined} />;
+}
+
+function SourceTopNavigation(props: { pathname: string; language: ShellLanguage }) {
+  const params = useSearchParams();
+  return <TopNavigationItems {...props} shop={params.get("shop") ?? undefined} />;
+}
+
+function TopNavigationItems({
+  pathname,
+  shop,
+  language,
+}: {
+  pathname: string;
+  shop?: string;
+  language: ShellLanguage;
+}) {
+  const labels = shellLabels(language);
+  const query = shop && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shop)
+    ? `?shop=${encodeURIComponent(shop)}`
+    : "";
+
+  return (
+    <>
+      {destinations.map((item) => {
+        const current = item.href === "/" ? pathname === "/" || pathname === "/demo" : pathname.startsWith(item.href);
+        const href = pathname === "/demo" && item.href === "/" ? "/demo" : `${item.href}${query}`;
+        const label = item.labelKey === "dashboard" ? labels.dashboard : labels[item.mobileKey];
+
+        return (
+          <Link
+            key={item.href}
+            href={href}
+            className={`topbar-3d-link${current ? " is-active" : ""}`}
+            aria-current={current ? "page" : undefined}
+          >
+            <span className="topbar-link-text">{label}</span>
+          </Link>
+        );
+      })}
+    </>
+  );
 }
 
 function SourceNavigation(props: { pathname: string; collapsed?: boolean; mobile?: boolean; language: ShellLanguage }) {

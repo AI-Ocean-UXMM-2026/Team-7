@@ -26,7 +26,7 @@ export function DigitalShopCard({
           <span className="chip-circle chip-circle-2" />
         </div>
         <div className="card-brand-badge">
-          <span className="card-pay-logo">🐬 SayarPay</span>
+          <span className="card-pay-logo">🐬 တူတူတွက်မယ် Pay</span>
         </div>
       </div>
 

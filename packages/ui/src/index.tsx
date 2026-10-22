@@ -10,7 +10,10 @@ export type IconName =
   | "wallet"
   | "orders"
   | "search"
-  | "bell";
+  | "bell"
+  | "plans"
+  | "store"
+  | "users";
 
 const paths: Record<IconName, string> = {
   home: "m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8",
@@ -24,17 +27,28 @@ const paths: Record<IconName, string> = {
   orders: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6",
   search: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
   bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
+  plans: "M12 2c0 5.2-4 9.2-9 9.2 5 0 9 4 9 9.2 0-5.2 4-9.2 9-9.2-5 0-9-4-9-9.2z",
+  store: "M3 9l1-5h16l1 5M4 9v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M9 21V12h6v9",
+  users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
 };
 
-export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+export function Icon({
+  name,
+  size = 20,
+  fill = false,
+}: {
+  name: IconName;
+  size?: number;
+  fill?: boolean;
+}) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={fill ? "currentColor" : "none"}
       stroke="currentColor"
-      strokeWidth="1.7"
+      strokeWidth={fill ? "0" : "1.7"}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

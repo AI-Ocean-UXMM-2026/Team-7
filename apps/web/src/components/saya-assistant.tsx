@@ -394,23 +394,22 @@ export function SayaAssistant({
           type="button"
           className="saya-floating-launcher"
           onClick={() => setIsOpen(true)}
-          aria-label="Open Saya AI Assistant"
-          title="Open Saya Assistant"
+          aria-label="Open တူတူတွက်မယ် Assistant"
+          title="Open တူတူတွက်မယ် Assistant"
         >
           <Image
             src={dolphinLauncher}
-            alt="Saya Assistant Dolphin"
-            width={58}
-            height={58}
+            alt=""
+            width={78}
+            height={78}
             priority
           />
-          <span className="saya-launcher-badge">Saya Assistant</span>
         </button>
       )}
 
       {/* Docked Assistant Panel identical to Electron desktop assistant */}
       {isOpen && (
-        <aside className="saya-docked-panel assistant-shell" aria-label="Saya AI Assistant">
+        <aside className="saya-docked-panel assistant-shell" aria-label="တူတူတွက်မယ် Assistant">
           {/* Header with Mini Home Icon leading directly to Dashboard */}
           <header className="panel-header">
             <div className="header-drag" aria-hidden="true">
