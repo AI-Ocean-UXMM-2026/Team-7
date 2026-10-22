@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { uuidSchema } from "@ocean/contracts";
 import { getDb } from "../db/sqlite.ts";
+import { ensureLocalProfile } from "./local-profile.ts";
 
 export const SESSION_COOKIE = "salesayar_session";
 
@@ -30,6 +31,8 @@ export interface SessionTokenPayload {
   iat: number; // issuedAt ms
   exp: number; // expiresAt ms
   nonce: string;
+  email?: string;
+  name?: string;
 }
 
 export function getSessionSecret(): string {
@@ -116,12 +119,23 @@ export function verifyShopMembership(
       return { authorized: false };
     }
 
-    const row = db.prepare(`
+    let row = db.prepare(`
       SELECT sm.role, s.id as shop_id, s.name as shop_name, s.currency, s.is_sample
       FROM shop_memberships sm
       JOIN shops s ON sm.shop_id = s.id
       WHERE sm.user_id = ? AND sm.shop_id = ?
     `).get(userId, shopId) as { role: string; shop_id: string; shop_name: string; currency: string; is_sample: number } | undefined;
+
+    // Self-heal on serverless cold starts: ensure membership exists for valid user
+    if (!row) {
+      ensureLocalProfile({ id: userId });
+      row = db.prepare(`
+        SELECT sm.role, s.id as shop_id, s.name as shop_name, s.currency, s.is_sample
+        FROM shop_memberships sm
+        JOIN shops s ON sm.shop_id = s.id
+        WHERE sm.user_id = ? AND sm.shop_id = ?
+      `).get(userId, shopId) as { role: string; shop_id: string; shop_name: string; currency: string; is_sample: number } | undefined;
+    }
 
     if (!row) {
       return { authorized: false };
@@ -155,13 +169,25 @@ export function getUserAuthorizedShops(userId: string): Array<{
   if (!uuidSchema.safeParse(userId).success) return [];
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    let rows = db.prepare(`
       SELECT sm.shop_id, s.name as shop_name, sm.role, s.currency, s.is_sample
       FROM shop_memberships sm
       JOIN shops s ON sm.shop_id = s.id
       WHERE sm.user_id = ?
       ORDER BY s.is_sample ASC, sm.created_at ASC
     `).all(userId) as Array<{ shop_id: string; shop_name: string; role: string; currency: string; is_sample: number }>;
+
+    // Self-heal on serverless cold starts: if no shops found, provision primary store
+    if (rows.length === 0) {
+      ensureLocalProfile({ id: userId });
+      rows = db.prepare(`
+        SELECT sm.shop_id, s.name as shop_name, sm.role, s.currency, s.is_sample
+        FROM shop_memberships sm
+        JOIN shops s ON sm.shop_id = s.id
+        WHERE sm.user_id = ?
+        ORDER BY s.is_sample ASC, sm.created_at ASC
+      `).all(userId) as Array<{ shop_id: string; shop_name: string; role: string; currency: string; is_sample: number }>;
+    }
 
     return rows.map((r) => ({
       shop_id: r.shop_id,

@@ -46,13 +46,17 @@ export async function GET(request: NextRequest) {
   if (!user?.id) return failure("no-user-id");
 
   if (type !== "recovery") {
-    ensureLocalProfile(user);
-    // Capture the session token so we can set it explicitly on the redirect
-    // response. NextResponse.redirect() does NOT automatically carry cookies
-    // written to the request-scoped cookie store by the Supabase client or
-    // by createSessionCookie — this was the root cause of the Google OAuth loop.
-    const sessionToken = await createSessionCookie(user.id);
-    const response = NextResponse.redirect(new URL(next, origin));
+    const displayName =
+      typeof user.user_metadata?.display_name === "string" && user.user_metadata.display_name.trim()
+        ? user.user_metadata.display_name.trim()
+        : user.email?.split("@")[0] || "Merchant";
+    const { shopId } = ensureLocalProfile(user);
+    const sessionToken = await createSessionCookie(user.id, undefined, {
+      email: user.email ?? undefined,
+      displayName,
+    });
+    const targetPath = next === "/workspace" ? `/?shop=${shopId}` : next;
+    const response = NextResponse.redirect(new URL(targetPath, origin));
     response.cookies.set(SESSION_COOKIE, sessionToken, {
       path: "/",
       httpOnly: true,

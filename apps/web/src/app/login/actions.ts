@@ -61,13 +61,20 @@ export async function signInAction(
         // FAIL CLOSED: Never fall back to local password bypass when provider rejects
         return { error: "Invalid email or password." };
       }
-      ensureLocalProfile({
+      const { shopId } = ensureLocalProfile({
         id: data.user.id,
         email: data.user.email,
         user_metadata: data.user.user_metadata,
       });
-      await createSessionCookie(data.user.id);
-      redirect(nextPath);
+      const displayName = typeof data.user.user_metadata?.display_name === "string"
+        ? data.user.user_metadata.display_name
+        : undefined;
+      await createSessionCookie(data.user.id, undefined, {
+        email: data.user.email ?? undefined,
+        displayName,
+      });
+      const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+      redirect(target);
     } catch (e: unknown) {
       if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
         throw e;
@@ -131,13 +138,20 @@ export async function signUpAction(
         };
       }
       if (data.session && data.user) {
-        ensureLocalProfile({
+        const { shopId } = ensureLocalProfile({
           id: data.user.id,
           email: data.user.email,
           user_metadata: data.user.user_metadata,
         });
-        await createSessionCookie(data.user.id);
-        redirect(nextPath);
+        const displayName = typeof data.user.user_metadata?.display_name === "string"
+          ? data.user.user_metadata.display_name
+          : undefined;
+        await createSessionCookie(data.user.id, undefined, {
+          email: data.user.email ?? undefined,
+          displayName,
+        });
+        const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+        redirect(target);
       }
 
       // If email confirmation is disabled or session was omitted, attempt immediate sign-in
@@ -146,13 +160,20 @@ export async function signUpAction(
         password: parsed.data.password,
       });
       if (loginRes.data?.session && loginRes.data?.user) {
-        ensureLocalProfile({
+        const { shopId } = ensureLocalProfile({
           id: loginRes.data.user.id,
           email: loginRes.data.user.email,
           user_metadata: loginRes.data.user.user_metadata,
         });
-        await createSessionCookie(loginRes.data.user.id);
-        redirect(nextPath);
+        const displayName = typeof loginRes.data.user.user_metadata?.display_name === "string"
+          ? loginRes.data.user.user_metadata.display_name
+          : undefined;
+        await createSessionCookie(loginRes.data.user.id, undefined, {
+          email: loginRes.data.user.email ?? undefined,
+          displayName,
+        });
+        const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+        redirect(target);
       }
 
       // If email confirmation is still required, tell the user clearly

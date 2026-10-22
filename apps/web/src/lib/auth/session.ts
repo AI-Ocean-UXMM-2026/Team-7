@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers.js";
 import { uuidSchema } from "@ocean/contracts";
 import { getDb } from "../db/sqlite.ts";
+import { ensureLocalProfile } from "./local-profile.ts";
 import {
   SESSION_COOKIE,
   type SessionUser,
@@ -39,9 +40,21 @@ export function resolveSessionUser(token?: string | null): SessionUser | null {
 
   const db = getDb();
   try {
-    const profile = db.prepare("SELECT id, email, display_name, status, session_revoked_at FROM profiles WHERE id = ?").get(verified.sub) as
+    let profile = db.prepare("SELECT id, email, display_name, status, session_revoked_at FROM profiles WHERE id = ?").get(verified.sub) as
       | { id: string; email: string; display_name: string; status: string | null; session_revoked_at: string | null }
       | undefined;
+
+    // Self-heal on serverless cold starts: recreate profile & primary store from verified token
+    if (!profile) {
+      ensureLocalProfile({
+        id: verified.sub,
+        email: verified.email ?? "",
+        user_metadata: verified.name ? { display_name: verified.name } : null,
+      });
+      profile = db.prepare("SELECT id, email, display_name, status, session_revoked_at FROM profiles WHERE id = ?").get(verified.sub) as
+        | { id: string; email: string; display_name: string; status: string | null; session_revoked_at: string | null }
+        | undefined;
+    }
 
     // Fail closed if profile does not exist
     if (!profile) return null;
@@ -134,7 +147,11 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
 /**
  * Issue a signed session cookie. Safely returns signed token in test/non-request environments.
  */
-export async function createSessionCookie(userId: string, maxAgeSeconds: number = 60 * 60 * 24 * 7): Promise<string> {
+export async function createSessionCookie(
+  userId: string,
+  maxAgeSeconds: number = 60 * 60 * 24 * 7,
+  extra?: { email?: string; displayName?: string }
+): Promise<string> {
   let cookieStore;
   try {
     cookieStore = await cookies();
@@ -147,6 +164,8 @@ export async function createSessionCookie(userId: string, maxAgeSeconds: number 
     iat: now,
     exp: now + maxAgeSeconds * 1000,
     nonce: crypto.randomBytes(8).toString("hex"),
+    email: extra?.email,
+    name: extra?.displayName,
   };
 
   const token = signSessionToken(payload);
