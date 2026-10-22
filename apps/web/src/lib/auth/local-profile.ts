@@ -72,6 +72,30 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string; displ
     WHERE id = ?
   `).run(user.email ?? "", displayName, now, user.id);
 
+  // Auto-redeem any pending shop invitations for this email
+  if (user.email && user.email.includes("@")) {
+    try {
+      const pendingInvites = db.prepare(`
+        SELECT id, shop_id, role
+        FROM shop_invitations
+        WHERE lower(email) = lower(?)
+      `).all(user.email.trim()) as Array<{ id: string; shop_id: string; role: string }>;
+
+      for (const invite of pendingInvites) {
+        db.prepare(`
+          INSERT OR REPLACE INTO shop_memberships (shop_id, user_id, role, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(invite.shop_id, user.id, invite.role || "staff", now);
+
+        db.prepare(`
+          DELETE FROM shop_invitations WHERE id = ?
+        `).run(invite.id);
+      }
+    } catch (err) {
+      console.warn("Failed auto-redeeming pending shop invitations:", err);
+    }
+  }
+
   // Check if user already has an active live shop membership
   const existingMembership = db.prepare(`
     SELECT sm.shop_id
@@ -111,12 +135,6 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string; displ
       // Non-critical
     }
   }
-
-  // Also ensure owner membership to the sample demo boutique
-  db.prepare(`
-    INSERT OR IGNORE INTO shop_memberships (shop_id, user_id, role, created_at)
-    VALUES (?, ?, 'owner', ?)
-  `).run(SAMPLE_SHOP_ID, user.id, now);
 
   return { shopId: targetShopId, displayName };
 }

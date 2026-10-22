@@ -116,6 +116,16 @@ export function initSchema(db: DatabaseSync) {
       PRIMARY KEY (shop_id, user_id)
     );
 
+    CREATE TABLE IF NOT EXISTS shop_invitations (
+      id TEXT PRIMARY KEY,
+      shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      email TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'staff',
+      created_at TEXT NOT NULL,
+      created_by TEXT,
+      UNIQUE(shop_id, email)
+    );
+
     CREATE TABLE IF NOT EXISTS shop_receiving_accounts (
       id TEXT PRIMARY KEY,
       shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,

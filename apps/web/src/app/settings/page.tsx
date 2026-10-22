@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Card, PageHeading } from "@ocean/ui";
 import { LanguagePreferenceField } from "@/components/shell-language";
 import { ReceivingAccounts } from "@/components/receiving-accounts";
+import { TeamMembers } from "@/components/team-members";
 import { getCurrentSession, getAuthorizedShopSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -30,11 +31,12 @@ export default async function SettingsPage({
       <PageHeading
         eyebrow="Your workspace"
         title="Settings"
-        description="Your shop details and workspace preferences."
+        description="Your shop details, team collaboration, and workspace preferences."
       />
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
           <a href="#shop-profile">Shop profile</a>
+          <a href="#team-management-heading">Team &amp; sharing</a>
           <a href="#receiving-accounts-heading">Receiving accounts</a>
           <a href="#preferences">Language &amp; currency</a>
         </nav>
@@ -67,6 +69,9 @@ export default async function SettingsPage({
                 <dd>{session.email || session.displayName || "Account email unavailable"}</dd>
               </div>
             </dl>
+          </Card>
+          <Card>
+            <TeamMembers shopId={currentShop.id} isOwner={role === "owner"} />
           </Card>
           <Card><ReceivingAccounts shopId={currentShop.id} owner={role === "owner"} /></Card>
           <Card>

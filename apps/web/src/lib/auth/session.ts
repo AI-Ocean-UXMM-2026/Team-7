@@ -44,11 +44,11 @@ export function resolveSessionUser(token?: string | null): SessionUser | null {
       | { id: string; email: string; display_name: string; status: string | null; session_revoked_at: string | null }
       | undefined;
 
-    // Self-heal on serverless cold starts: recreate profile & primary store from verified token
-    if (!profile) {
+    // Self-heal on serverless cold starts: recreate profile & primary store only from verified token that contains authenticated user credentials
+    if (!profile && verified.email && verified.email.trim()) {
       ensureLocalProfile({
         id: verified.sub,
-        email: verified.email ?? "",
+        email: verified.email,
         user_metadata: verified.name ? { display_name: verified.name } : null,
       });
       profile = db.prepare("SELECT id, email, display_name, status, session_revoked_at FROM profiles WHERE id = ?").get(verified.sub) as
