@@ -1,65 +1,89 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Card, PageHeading } from "@ocean/ui";
+import { LanguagePreferenceField } from "@/components/shell-language";
+import { ReceivingAccounts } from "@/components/receiving-accounts";
+import { getCurrentSession, getAuthorizedShopSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Settings" };
+export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ shop?: string }>;
+}) {
+  const { shop } = await searchParams;
+  const session = await getCurrentSession();
+  if (!session) {
+    redirect("/login?next=/settings");
+  }
+
+  const authSession = await getAuthorizedShopSession(shop);
+  if (!authSession) {
+    redirect("/workspace?next=%2Fsettings");
+  }
+  const { shop: currentShop, role } = authSession;
+
   return (
     <div className="page-stack">
       <PageHeading
         eyebrow="Your workspace"
         title="Settings"
-        description="Your shop details and preferences, together in one place."
+        description="Your shop details and workspace preferences."
       />
       <div className="settings-layout">
-        <nav className="settings-nav" aria-label="Settings sections"><a href="#shop-profile">Shop profile</a><a href="#preferences">Language &amp; currency</a></nav>
+        <nav className="settings-nav" aria-label="Settings sections">
+          <a href="#shop-profile">Shop profile</a>
+          <a href="#receiving-accounts-heading">Receiving accounts</a>
+          <a href="#preferences">Language &amp; currency</a>
+        </nav>
         <div className="page-stack">
-        <Card>
-          <div className="card-heading">
-            <div>
-              <h2 id="shop-profile">Shop profile</h2>
-              <p className="muted">
-                The details that make your shop, yours
-              </p>
+          <Card>
+            <div className="card-heading">
+              <div>
+                <h2 id="shop-profile">Shop profile</h2>
+                <p className="muted">Workspace details available to this account.</p>
+              </div>
+              <span className={`badge ${currentShop.is_sample ? "status-warning" : "status-info"}`}>
+                {currentShop.is_sample ? "Sample Workspace" : "Live Workspace"}
+              </span>
             </div>
-            <span className="badge">Sample profile</span>
-          </div>
-          <div className="settings-fields">
-            <label className="settings-field field-full">Shop name<input readOnly value="May Thu’s Shop"/></label>
-            <label className="settings-field">Phone number<input readOnly value="09 xxx xxx xxx"/></label>
-            <label className="settings-field">Business email<input readOnly value="hello@example.com"/></label>
-            <label className="settings-field field-full">Shop address<textarea readOnly value="Hlaing Township, Yangon" rows={3}/></label>
-          </div>
-          <p className="settings-note">
-            These are read-only sample details. Profile saving and account setup aren’t connected.
-          </p>
-        </Card>
-        <Card>
-          <div className="card-heading">
-            <div>
-              <h2 id="preferences">Language &amp; currency</h2>
-              <p className="muted">English-first, with room for Burmese</p>
+            <dl className="settings-details">
+              <div>
+                <dt>Shop name</dt>
+                <dd>{currentShop.name}</dd>
+              </div>
+              <div>
+                <dt>Account access</dt>
+                <dd>{role[0]?.toUpperCase()}{role.slice(1)}</dd>
+              </div>
+              <div>
+                <dt>Currency</dt>
+                <dd>{currentShop.currency === "MMK" ? "MMK · Myanmar Kyat" : currentShop.currency}</dd>
+              </div>
+              <div>
+                <dt>Signed in as</dt>
+                <dd>{session.email || session.displayName || "Account email unavailable"}</dd>
+              </div>
+            </dl>
+          </Card>
+          <Card><ReceivingAccounts shopId={currentShop.id} owner={role === "owner"} /></Card>
+          <Card>
+            <div className="card-heading">
+              <div>
+                <h2 id="preferences">Language &amp; currency</h2>
+                <p className="muted">Language is a browser preference. Currency follows the selected shop.</p>
+              </div>
             </div>
-          </div>
-          <dl className="settings-list">
-            <div>
-              <dt>Interface language</dt>
-              <dd>English</dd>
+            <div className="settings-fields">
+              <LanguagePreferenceField />
+              <div className="settings-static-value">
+                <span>Currency</span>
+                <strong>{currentShop.currency === "MMK" ? "MMK · Myanmar Kyat" : currentShop.currency}</strong>
+              </div>
             </div>
-            <div>
-              <dt>Currency</dt>
-              <dd>Myanmar Kyat (MMK)</dd>
-            </div>
-            <div>
-              <dt>Theme</dt>
-              <dd>Ocean blue</dd>
-            </div>
-          </dl>
-          <p className="settings-note">
-            English is available. Burmese text is supported in customer chats;
-            full interface translation isn’t connected yet.
-          </p>
-        </Card>
+          </Card>
         </div>
       </div>
     </div>

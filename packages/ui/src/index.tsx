@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, CSSProperties } from "react";
 
 export type IconName =
   | "home"
@@ -9,7 +9,8 @@ export type IconName =
   | "arrow"
   | "wallet"
   | "orders"
-  | "search";
+  | "search"
+  | "bell";
 
 const paths: Record<IconName, string> = {
   home: "m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8",
@@ -22,6 +23,7 @@ const paths: Record<IconName, string> = {
   wallet: "M3 6h18v14H3zM3 6V3h15v3M16 11h5v5h-5z",
   orders: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6",
   search: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
+  bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
 };
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
@@ -45,11 +47,13 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 export function Card({
   children,
   className = "",
+  style,
 }: {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }) {
-  return <section className={`card ${className}`}>{children}</section>;
+  return <section className={`card ${className}`} style={style}>{children}</section>;
 }
 
 export function PageHeading({

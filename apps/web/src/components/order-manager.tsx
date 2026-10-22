@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Card, Icon } from "@ocean/ui";
 import { calculateOrderTotals, fulfillmentStatusSchema, orderStatusSchema, saveOrderSchema, type OrderDetails, type SaveOrderInput } from "@ocean/contracts";
 import { loadOrders, saveOrder, type OrdersResult } from "@/app/sales/actions";
+import { useShellLanguage } from "./shell-language";
+import { shellLabels } from "@/lib/shell-ui";
 
 const money = (value: number) => `${value.toLocaleString("en-US")} MMK`;
 const label = (value: string) => value.replaceAll("_", " ");
@@ -24,7 +26,15 @@ function validationMessage(path: string, fallback: string) {
   return fallback;
 }
 
-export function OrderManager({ shopId, initial, initialQuery, initialOrderId }: { shopId: string; initial: OrdersResult; initialQuery: string; initialOrderId?: string }) {
+type OrderManagerProps = { shopId: string; initial: OrdersResult; initialQuery: string; initialOrderId?: string };
+
+export function OrderManager(props: OrderManagerProps) {
+  return <OrderManagerView key={`${props.shopId}:${props.initialQuery}:${props.initialOrderId ?? ""}`} {...props} />;
+}
+
+function OrderManagerView({ shopId, initial, initialQuery, initialOrderId }: OrderManagerProps) {
+  const { language } = useShellLanguage();
+  const labels = shellLabels(language);
   const [orders, setOrders] = useState(initial.orders ?? []);
   const [error, setError] = useState(initial.error);
   const [loading, setLoading] = useState(false);
@@ -41,7 +51,7 @@ export function OrderManager({ shopId, initial, initialQuery, initialOrderId }: 
       const result = await loadOrders(shopId);
       setError(result.error);
       if (result.orders) setOrders(result.orders);
-    } catch { setError("Orders could not be loaded. Please retry."); }
+    } catch { setError(language === "my" ? "အော်ဒါစာရင်း ရယူ၍ မရနိုင်ပါ။ ထပ်မံကြိုးစားပါ။" : "Orders could not be loaded. Please retry."); }
     finally { setLoading(false); }
   };
   const rows = orders.slice(0, 500).filter(order =>
@@ -49,29 +59,170 @@ export function OrderManager({ shopId, initial, initialQuery, initialOrderId }: 
     (!status || order.order_status === status) && (!payment || order.payment_status === payment) && (!fulfillment || order.fulfillment_status === fulfillment)
   ).sort((a, b) => sort === "amount" ? b.total_mmk - a.total_mmk : sort === "oldest" ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at));
   return <>
-    <div className="order-list-heading"><div><h2>Orders</h2><p className="muted">Your shop’s saved orders · MMK</p></div><button className="auth-submit" disabled={!!error || loading} onClick={() => { setNotice(""); setSelected("new"); }}>+ Create order</button></div>
+    <div className="order-list-heading">
+      <div>
+        <h2>{labels.orders}</h2>
+        <p className="muted">{language === "my" ? "ဆိုင်၏ အတည်ပြုပြီးနှင့် မူကြမ်း အော်ဒါစာရင်း · MMK" : "Your shop’s saved orders · MMK"}</p>
+      </div>
+      <button className="auth-submit" disabled={!!error || loading} onClick={() => { setNotice(""); setSelected("new"); }}>
+        {labels.createOrder}
+      </button>
+    </div>
     <p role="status" className="order-notice">{notice}</p>
     <Card className="orders-card real-orders">
       <div className="table-toolbar">
-        <label className="search-field"><Icon name="search"/><span className="sr-only">Search orders</span><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search order ID, customer or product"/></label>
-        <label>Order status<select value={status} onChange={e => setStatus(e.target.value)}><option value="">All order statuses</option>{orderStatusSchema.options.map(s => <option key={s} value={s}>{label(s)}</option>)}</select></label>
-        <label>Payment<select value={payment} onChange={e => setPayment(e.target.value)}><option value="">All payments</option>{["unpaid", "partially_paid", "paid", "refunded"].map(s => <option key={s} value={s}>{label(s)}</option>)}</select></label>
-        <label>Fulfillment<select value={fulfillment} onChange={e => setFulfillment(e.target.value)}><option value="">All fulfillment</option>{fulfillmentStatusSchema.options.map(s => <option key={s} value={s}>{label(s)}</option>)}</select></label>
-        <label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="amount">Highest total</option></select></label>
-        <button className="auth-secondary" disabled={loading} onClick={refresh}>{loading ? "Loading…" : "Reload orders"}</button>
+        <label className="search-field">
+          <Icon name="search"/>
+          <span className="sr-only">{labels.searchOrders}</span>
+          <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={labels.searchOrders}/>
+        </label>
+        <label>
+          <span>{labels.orderId}</span>
+          <select value={status} onChange={e => setStatus(e.target.value)}>
+            <option value="">{labels.allOrderStatuses}</option>
+            {orderStatusSchema.options.map(s => (
+              <option key={s} value={s}>
+                {language === "my" && s === "confirmed" ? "အတည်ပြုပြီး" : language === "my" && s === "draft" ? "မူကြမ်း" : label(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{labels.paymentStatus}</span>
+          <select value={payment} onChange={e => setPayment(e.target.value)}>
+            <option value="">{labels.allPayments}</option>
+            {["unpaid", "partially_paid", "paid", "refunded"].map(s => (
+              <option key={s} value={s}>
+                {language === "my" && s === "paid" ? "ပေးချေပြီး" : language === "my" && s === "unpaid" ? "မပေးချေရသေး" : language === "my" && s === "partially_paid" ? "တစ်စိတ်တစ်ပိုင်း" : label(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{labels.fulfillmentStatus}</span>
+          <select value={fulfillment} onChange={e => setFulfillment(e.target.value)}>
+            <option value="">{labels.allFulfillment}</option>
+            {fulfillmentStatusSchema.options.map(s => (
+              <option key={s} value={s}>
+                {language === "my" && s === "delivered" ? "ပို့ဆောင်ပြီး" : language === "my" && s === "shipped" ? "ပို့ဆောင်ဆဲ" : language === "my" && s === "processing" ? "စီစဉ်ဆဲ" : label(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{language === "my" ? "စီစဉ်ရန်" : "Sort by"}</span>
+          <select value={sort} onChange={e => setSort(e.target.value)}>
+            <option value="newest">{labels.newestFirst}</option>
+            <option value="oldest">{labels.oldestFirst}</option>
+            <option value="amount">{language === "my" ? "တန်ဖိုး အများဆုံး" : "Highest total"}</option>
+          </select>
+        </label>
+        <button className="auth-secondary" disabled={loading} onClick={refresh}>
+          {loading ? (language === "my" ? "ရယူနေသည်..." : "Loading…") : labels.reloadOrders}
+        </button>
       </div>
-      {loading ? <div className="table-empty" role="status" aria-busy="true"><div className="skeleton skeleton-heading"/><p>Loading your shop’s orders…</p></div> : error ? <div className="table-empty" role="alert"><h3>Orders unavailable</h3><p>{error}</p><button className="auth-secondary" onClick={refresh}>Retry loading</button></div> : <>
-        <div className="table-scroll order-records"><table className="data-table"><caption className="sr-only">Saved orders. All amounts in MMK. Dates use Myanmar time. Order, payment and fulfillment are independent statuses.</caption>
-          <thead><tr><th scope="col">Order / customer</th><th scope="col" aria-sort={sort === "amount" ? "none" : sort === "oldest" ? "ascending" : "descending"}>Created · Myanmar time</th><th scope="col" className="amount-cell" aria-sort={sort === "amount" ? "descending" : "none"}>Total (MMK)</th><th scope="col">Order</th><th scope="col">Payment</th><th scope="col">Fulfillment</th></tr></thead>
-          <tbody>{rows.map(order => <tr key={order.id}><td data-label="Order / customer"><button className="order-open" aria-label={`Open order ${order.id} for ${order.customers?.name ?? "unknown customer"}`} onClick={() => { setNotice(""); setSelected(order); }}><strong>#{order.id.slice(0, 8)}</strong><span>{order.customers?.name ?? "Customer unavailable"}</span><small>{order.order_items.map(i => `${i.quantity} × ${i.product_name}`).join(", ")}</small></button></td><td data-label="Created">{date(order.created_at)}</td><td data-label="Total" className="amount-cell">{money(order.total_mmk)}</td><td data-label="Order status"><span className={`status-badge ${order.order_status === "confirmed" ? "status-info" : "status-neutral"}`}>{label(order.order_status)}</span></td><td data-label="Payment"><span className={`status-badge ${order.payment_status === "unpaid" ? "status-warning" : "status-neutral"}`}>{label(order.payment_status)}</span></td><td data-label="Fulfillment"><span className="status-badge status-neutral">{label(order.fulfillment_status)}</span></td></tr>)}</tbody>
-        </table></div>
-        {!rows.length && <div className="table-empty"><Icon name="orders" size={30}/><h3>{orders.length ? "No matching orders" : "Your first order starts here"}</h3><p>{orders.length ? "Try another search or clear the filters." : "Add your customer and products, review the total, then save."}</p>{orders.length ? <button className="text-button" onClick={() => { setQuery(""); setStatus(""); setPayment(""); setFulfillment(""); }}>Clear filters</button> : <button className="auth-secondary" onClick={() => setSelected("new")}>Create your first order</button>}</div>}
-        <p className="table-summary" role="status">Showing {rows.length} of {Math.min(orders.length, 500)} loaded orders{orders.length > 500 ? ". Only the latest 500 orders are shown; search and filters apply to these orders." : ""}</p>
-      </>}
+      {loading ? (
+        <div className="table-loading" role="status" aria-live="polite" aria-busy="true">
+          <span className="sync-spinner" aria-hidden="true" />
+          {language === "my" ? "ဆိုင်၏ အော်ဒါမှတ်တမ်းများကို ရယူနေပါသည်..." : "Loading your shop’s orders…"}
+        </div>
+      ) : error ? (
+        <div className="table-empty" role="alert">
+          <h3>{language === "my" ? "အော်ဒါများ ဖွင့်မရပါ" : "Orders unavailable"}</h3>
+          <p>{error}</p>
+          <button className="auth-secondary" onClick={refresh}>{labels.retry}</button>
+        </div>
+      ) : (
+        <>
+          <div className="table-scroll order-records">
+            <table className="data-table">
+              <caption className="sr-only">Saved orders. All amounts in MMK. Dates use Myanmar time. Order, payment and fulfillment are independent statuses.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{labels.orderId}</th>
+                  <th scope="col">{labels.customer}</th>
+                  <th scope="col" aria-sort={sort === "amount" ? "none" : sort === "oldest" ? "ascending" : "descending"}>{labels.date}</th>
+                  <th scope="col" className="amount-cell" aria-sort={sort === "amount" ? "descending" : "none"}>{labels.amount}</th>
+                  <th scope="col">{labels.paymentStatus}</th>
+                  <th scope="col">{labels.fulfillmentStatus}</th>
+                  <th scope="col" className="amount-cell">{labels.action}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(order => {
+                  const orderNum = order.id.startsWith("40000000-0000-4000-8000-00000000")
+                    ? `SS-${order.id.slice(-4)}`
+                    : order.id.slice(0, 8).toUpperCase();
+
+                  const isPaid = order.payment_status === "paid";
+                  const isDelivered = order.fulfillment_status === "delivered";
+                  const isShipped = order.fulfillment_status === "shipped";
+                  const isProcessing = order.fulfillment_status === "processing";
+
+                  return (
+                    <tr key={order.id}>
+                      <td data-label={labels.orderId}>
+                        <button className="order-open" aria-label={`Open order ${order.id}`} onClick={() => { setNotice(""); setSelected(order); }}>
+                          <strong>#{orderNum}</strong>
+                        </button>
+                      </td>
+                      <td data-label={labels.customer}>
+                        <div className="customer-info-cell">
+                          <span>{order.customers?.name ?? (language === "my" ? "ဝယ်သူအမည် မရှိပါ" : "Customer unavailable")}</span>
+                          {order.customers?.phone && <small className="cell-phone">{order.customers.phone}</small>}
+                          <small className="cell-products">{order.order_items.map(i => `${i.quantity}× ${i.product_name}`).join(", ")}</small>
+                        </div>
+                      </td>
+                      <td data-label={labels.date}>{date(order.created_at)}</td>
+                      <td data-label={labels.amount} className="amount-cell font-mono">
+                        <strong>{money(order.total_mmk)}</strong>
+                      </td>
+                      <td data-label={labels.paymentStatus}>
+                        <span className={`status-badge ${isPaid ? "status-success" : "status-warning"}`}>
+                          {language === "my" && isPaid ? "ပေးချေပြီး" : language === "my" && order.payment_status === "unpaid" ? "မပေးချေရသေး" : label(order.payment_status)}
+                        </span>
+                      </td>
+                      <td data-label={labels.fulfillmentStatus}>
+                        <span className={`status-badge ${isDelivered ? "status-success" : isShipped ? "status-info" : isProcessing ? "status-neutral" : "status-warning"}`}>
+                          {language === "my" && isDelivered ? "ပို့ဆောင်ပြီး" : language === "my" && isShipped ? "ပို့ဆောင်ဆဲ" : language === "my" && isProcessing ? "ပြင်ဆင်ဆဲ" : label(order.fulfillment_status)}
+                        </span>
+                      </td>
+                      <td data-label={labels.action} className="amount-cell">
+                        <button className="table-action-btn" onClick={() => { setNotice(""); setSelected(order); }} aria-label={`View or edit order ${order.id}`}>
+                          {labels.viewEdit} →
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {!rows.length && (
+            <div className="table-empty">
+              <Icon name="orders" size={30}/>
+              <h3>{orders.length ? (language === "my" ? "ကိုက်ညီသော အော်ဒါမရှိပါ" : "No matching orders") : (language === "my" ? "ပထမဆုံး အော်ဒါဖွင့်ပါ" : "Your first order starts here")}</h3>
+              <p>{orders.length ? (language === "my" ? "အခြားအမည် ရှာကြည့်ပါ သို့မဟုတ် စစ်ထုတ်မှုများကို ပယ်ဖျက်ပါ။" : "Try another search or clear the filters.") : (language === "my" ? "ဝယ်သူနှင့် ကုန်ပစ္စည်းများထည့်ပြီး သိမ်းဆည်းပါ။" : "Add your customer and products, review the total, then save.")}</p>
+              {orders.length ? (
+                <button className="text-button" onClick={() => { setQuery(""); setStatus(""); setPayment(""); setFulfillment(""); }}>
+                  {language === "my" ? "စစ်ထုတ်မှုများ ပယ်ဖျက်ရန်" : "Clear filters"}
+                </button>
+              ) : (
+                <button className="auth-secondary" onClick={() => setSelected("new")}>
+                  {labels.createOrder}
+                </button>
+              )}
+            </div>
+          )}
+          <p className="table-summary" role="status">
+            {language === "my" ? `အော်ဒါ ${Math.min(orders.length, 500)} ခုအနက် ${rows.length} ခု ပြသနေပါသည်` : `Showing ${rows.length} of ${Math.min(orders.length, 500)} loaded orders`}
+          </p>
+        </>
+      )}
     </Card>
     {selected && <OrderDrawer key={selected === "new" ? "new" : `${selected.id}:${selected.updated_at}`} shopId={shopId} savedNotice={notice} order={selected === "new" ? null : selected} close={() => setSelected(null)} saved={order => {
       setOrders(previous => [order, ...previous.filter(o => o.id !== order.id)]);
-      setSelected(order); setNotice("Order saved and read back from Supabase.");
+      setSelected(order); setNotice(language === "my" ? "အော်ဒါ သိမ်းဆည်းပြီးပါပြီ။" : "Order saved successfully.");
     }}/ >}
   </>;
 }
@@ -164,12 +315,40 @@ export function OrderDrawer({ shopId, order, savedNotice, close, saved, readOnly
         {(error || Object.keys(errors).length > 0) && <div ref={summary} tabIndex={-1} role="alert" className="order-error-summary"><h3>Check your order</h3>{error && <p>{error}</p>}<ul>{Object.entries(errors).map(([path, message]) => <li key={path}><a href={`#order-${path}`}>{fieldLabel(path)}: {message}</a></li>)}</ul></div>}
         <fieldset disabled={pending}><legend>Customer</legend><div className="order-field-grid">{field("customer_name", "Customer name", { required: true, max: 160 })}{field("customer_phone", "Phone", { tel: true, max: 40, required: !!fields.delivery_address.trim() })}</div>{field("delivery_address", "Delivery address", { multiline: true, max: 500 })}</fieldset>
         <fieldset disabled={pending}><legend>Products · whole MMK amounts</legend>{items.map((item, index) => <div className="order-item-editor" key={item.key}>
-          {([['product_name', 'Product name'], ['quantity', 'Quantity'], ['unit_price_mmk', 'Unit price (MMK)']] as const).map(([key, title]) => {
-            const path = `items.${index}.${key}`;
-            return <label key={key} className="order-field" htmlFor={`order-${path}`}>{title} *<input id={`order-${path}`} type={key === "product_name" ? "text" : "number"} min={key === "quantity" ? 1 : 0} max={key === "quantity" ? 1000000 : key === "unit_price_mmk" ? 9007199254 : undefined} step={key === "product_name" ? undefined : 1} maxLength={key === "product_name" ? 200 : undefined} required value={item[key]} aria-invalid={!!errors[path]} aria-describedby={errors[path] ? `error-${path}` : undefined} onBlur={() => validate(path)} onChange={e => { setItems(items.map((row, n) => n === index ? { ...row, [key]: e.target.value } : row)); setDirty(true); }}/>{errors[path] && <span className="order-field-error" id={`error-${path}`}>{errors[path]}</span>}</label>;
-          })}
-          <p className="order-line-total">Line total: {Number.isSafeInteger(number(item.quantity) * number(item.unit_price_mmk)) && number(item.quantity) > 0 && number(item.unit_price_mmk) >= 0 ? money(number(item.quantity) * number(item.unit_price_mmk)) : "Enter quantity and price"}</p>
-          <button type="button" className="text-button" aria-label={`Remove product ${index + 1}`} disabled={items.length === 1} onClick={() => { setItems(items.filter((_, n) => n !== index)); setErrors({}); setDirty(true); }}>Remove</button>
+          <div className="order-item-grid">
+            <label className="order-field" htmlFor={`order-items.${index}.product_name`}>Product name *
+              <input id={`order-items.${index}.product_name`} type="text" maxLength={200} required value={item.product_name} aria-invalid={!!errors[`items.${index}.product_name`]} aria-describedby={errors[`items.${index}.product_name`] ? `error-items.${index}.product_name` : undefined} onBlur={() => validate(`items.${index}.product_name`)} onChange={e => { setItems(items.map((row, n) => n === index ? { ...row, product_name: e.target.value } : row)); setDirty(true); }}/>
+              {errors[`items.${index}.product_name`] && <span className="order-field-error" id={`error-items.${index}.product_name`}>{errors[`items.${index}.product_name`]}</span>}
+            </label>
+            <div className="order-field">
+              <label htmlFor={`order-items.${index}.quantity`}>Quantity *</label>
+              <div className="stepper-wrap">
+                <button type="button" className="stepper-btn" disabled={Number(item.quantity) <= 1} aria-label={`Decrease quantity for item ${index + 1}`} onClick={() => {
+                  const val = Math.max(1, (Number(item.quantity) || 1) - 1);
+                  setItems(items.map((row, n) => n === index ? { ...row, quantity: String(val) } : row));
+                  setDirty(true);
+                }}>−</button>
+                <input id={`order-items.${index}.quantity`} type="number" min={1} max={1000000} step={1} required className="stepper-input" value={item.quantity} aria-invalid={!!errors[`items.${index}.quantity`]} aria-describedby={errors[`items.${index}.quantity`] ? `error-items.${index}.quantity` : undefined} onBlur={() => validate(`items.${index}.quantity`)} onChange={e => {
+                  setItems(items.map((row, n) => n === index ? { ...row, quantity: e.target.value } : row));
+                  setDirty(true);
+                }}/>
+                <button type="button" className="stepper-btn" aria-label={`Increase quantity for item ${index + 1}`} onClick={() => {
+                  const val = (Number(item.quantity) || 0) + 1;
+                  setItems(items.map((row, n) => n === index ? { ...row, quantity: String(val) } : row));
+                  setDirty(true);
+                }}>+</button>
+              </div>
+              {errors[`items.${index}.quantity`] && <span className="order-field-error" id={`error-items.${index}.quantity`}>{errors[`items.${index}.quantity`]}</span>}
+            </div>
+            <label className="order-field" htmlFor={`order-items.${index}.unit_price_mmk`}>Unit price (MMK) *
+              <input id={`order-items.${index}.unit_price_mmk`} type="number" min={0} max={9007199254} step={1} required value={item.unit_price_mmk} aria-invalid={!!errors[`items.${index}.unit_price_mmk`]} aria-describedby={errors[`items.${index}.unit_price_mmk`] ? `error-items.${index}.unit_price_mmk` : undefined} onBlur={() => validate(`items.${index}.unit_price_mmk`)} onChange={e => { setItems(items.map((row, n) => n === index ? { ...row, unit_price_mmk: e.target.value } : row)); setDirty(true); }}/>
+              {errors[`items.${index}.unit_price_mmk`] && <span className="order-field-error" id={`error-items.${index}.unit_price_mmk`}>{errors[`items.${index}.unit_price_mmk`]}</span>}
+            </label>
+          </div>
+          <div className="order-item-footer">
+            <span className="order-line-total">Line total: {Number.isSafeInteger(number(item.quantity) * number(item.unit_price_mmk)) && number(item.quantity) > 0 && number(item.unit_price_mmk) >= 0 ? money(number(item.quantity) * number(item.unit_price_mmk)) : "Enter quantity and price"}</span>
+            <button type="button" className="text-button remove-item-btn" aria-label={`Remove product ${index + 1}`} disabled={items.length === 1} onClick={() => { setItems(items.filter((_, n) => n !== index)); setErrors({}); setDirty(true); }}>Remove</button>
+          </div>
         </div>)}<button type="button" className="auth-secondary" disabled={items.length >= 100} onClick={() => { setItems([...items, { key: crypto.randomUUID(), product_name: "", quantity: "1", unit_price_mmk: "" }]); setDirty(true); }}>+ Add product</button></fieldset>
         <fieldset disabled={pending}><legend>Totals & details</legend><div className="order-field-grid">{field("delivery_fee_mmk", "Delivery fee (MMK)", { numeric: true, required: true })}{field("discount_mmk", "Discount (MMK)", { numeric: true, required: true })}
           {([['order_status', 'Order status', orderStatusSchema.options], ['fulfillment_status', 'Fulfillment status', fulfillmentStatusSchema.options]] as const).map(([key, title, options]) => <label key={key} className="order-field" htmlFor={`order-${key}`}>{title}<select id={`order-${key}`} value={fields[key]} onChange={e => { setFields({ ...fields, [key]: e.target.value }); setDirty(true); }}>{options.map(option => <option key={option} value={option}>{label(option)}</option>)}</select></label>)}

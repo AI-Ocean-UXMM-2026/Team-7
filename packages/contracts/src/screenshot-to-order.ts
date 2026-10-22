@@ -14,6 +14,7 @@ export const screenshotExtractionSchema = z.object({
   transaction_time_uncertain: z.boolean(),
   payer_name: nullableText(160),
   payee_name: nullableText(160),
+  payee_account: nullableText(80).optional(),
   missing_fields: z.array(z.string().trim().min(1).max(80)).max(24),
   uncertain_fields: z.array(z.string().trim().min(1).max(80)).max(24),
 }).strict();
@@ -37,13 +38,13 @@ export const screenshotCandidateSchema = z.object({
   customer_relation: z.enum(["match", "mismatch", "unavailable"]),
   reference_relation: z.literal("unavailable"),
   reasons: z.array(z.string().trim().min(1).max(180)).max(8),
-  duplicate_warning: z.enum(["pending_evidence", "rejected_evidence"]).nullable(),
+  duplicate_warning: z.enum(["pending_evidence", "rejected_evidence", "verified_evidence"]).nullable(),
 }).strict();
 export type ScreenshotCandidate = z.infer<typeof screenshotCandidateSchema>;
 
 export const duplicateEvidenceWarningSchema = z.object({
   type: z.enum(["reference_provider", "image_hash"]),
-  status: z.enum(["pending_review", "rejected"]),
+  status: z.enum(["pending_review", "rejected", "verified"]),
   message: z.string().trim().min(1).max(180),
 }).strict();
 export type DuplicateEvidenceWarning = z.infer<typeof duplicateEvidenceWarningSchema>;
@@ -54,6 +55,7 @@ const screenshotResultFields = {
   duplicate_warnings: z.array(duplicateEvidenceWarningSchema).max(20),
   image_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   evidence_schema_available: z.boolean(),
+  verification_available: z.boolean(),
 };
 
 export const screenshotAnalyzeResponseSchema = z.discriminatedUnion("mode", [
@@ -64,6 +66,11 @@ export const screenshotAnalyzeResponseSchema = z.discriminatedUnion("mode", [
   }).strict(),
   z.object({
     mode: z.literal("simulation"),
+    ...screenshotResultFields,
+    message: z.string().trim().min(1).max(240),
+  }).strict(),
+  z.object({
+    mode: z.literal("manual"),
     ...screenshotResultFields,
     message: z.string().trim().min(1).max(240),
   }).strict(),
@@ -92,6 +99,7 @@ export const screenshotMatchResponseSchema = z.object({
   duplicate_warnings: z.array(duplicateEvidenceWarningSchema).max(20),
   image_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   evidence_schema_available: z.boolean(),
+  verification_available: z.boolean(),
   message: z.string().trim().min(1).max(240),
 }).strict();
 
@@ -141,3 +149,68 @@ export const paymentEvidenceReadbackSchema = z.object({
   revision: z.number().int().nonnegative(),
 }).strict();
 export type PaymentEvidenceReadback = z.infer<typeof paymentEvidenceReadbackSchema>;
+
+export const localPaymentEvidenceReadbackSchema = z.object({
+  id: z.uuid(),
+  shop_id: z.uuid(),
+  order_id: z.uuid().nullable(),
+  image_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  image_data: z.string().nullable().optional(),
+  extracted: screenshotExtractionSchema,
+  seller_reviewed: screenshotExtractionSchema,
+  status: z.enum(["pending_review", "rejected", "verified"]),
+  payment_id: z.uuid().nullable(),
+  verified_at: z.iso.datetime({ offset: true }).nullable(),
+  created_by: z.uuid().nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+  revision: z.number().int().nonnegative(),
+}).strict();
+export type LocalPaymentEvidenceReadback = z.infer<typeof localPaymentEvidenceReadbackSchema>;
+
+export const paymentEvidenceResumeResponseSchema = z.object({
+  evidence: z.union([paymentEvidenceReadbackSchema, localPaymentEvidenceReadbackSchema]),
+  candidates: z.array(screenshotCandidateSchema).max(20),
+  duplicate_warnings: z.array(duplicateEvidenceWarningSchema).max(20),
+  image_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  evidence_schema_available: z.boolean(),
+  verification_available: z.boolean(),
+  message: z.string().trim().min(1).max(240),
+}).strict();
+export type PaymentEvidenceResumeResponse = z.infer<typeof paymentEvidenceResumeResponseSchema>;
+
+export const paymentEvidenceVerifyRequestSchema = z.object({
+  shop_id: z.uuid(),
+  evidence_id: z.uuid(),
+  order_id: z.uuid(),
+  amount_mmk: z.number().int().safe().positive(),
+  payment_method: z.string().trim().min(1).max(80),
+  reference_number: nullableText(160),
+  expected_revision: z.number().int().nonnegative().max(1000000),
+  confirm_trusted_record: z.literal(true),
+}).strict();
+export type PaymentEvidenceVerifyRequest = z.infer<typeof paymentEvidenceVerifyRequestSchema>;
+
+export const paymentEvidenceVerifyReadbackSchema = z.object({
+  idempotent: z.boolean(),
+  evidence_id: z.uuid(),
+  payment: z.object({
+    id: z.uuid(),
+    shop_id: z.uuid(),
+    order_id: z.uuid(),
+    amount_mmk: z.number().int().safe().positive(),
+    payment_method: z.string().trim().min(1).max(80),
+    reference_number: nullableText(160),
+    verified_at: z.iso.datetime({ offset: true }),
+    created_at: z.iso.datetime({ offset: true }),
+  }).strict(),
+  order: z.object({
+    id: z.uuid(),
+    order_status: screenshotOrderStatusSchema,
+    payment_status: screenshotPaymentStatusSchema,
+    fulfillment_status: screenshotFulfillmentStatusSchema,
+    total_mmk: z.number().int().safe().nonnegative(),
+    total_paid_mmk: z.number().int().safe().nonnegative(),
+  }).strict(),
+}).strict();
+export type PaymentEvidenceVerifyReadback = z.infer<typeof paymentEvidenceVerifyReadbackSchema>;

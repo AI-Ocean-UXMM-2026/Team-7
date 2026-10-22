@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node --test src/lib/auth.test.ts src/lib/business/attention.test.ts src/lib/business/sample-provider.test.ts src/lib/ai/screenshot-scope.test.ts src/app/api/ai/chat-to-order/guard.test.ts src/app/api/ai/screenshot-to-order/image.test.ts src/app/assistant/draft-lock.test.ts",
+    "test": "node --test src/lib/auth.test.ts src/lib/auth/assistant-pairing.test.ts src/lib/auth/request-origin.test.ts src/lib/business/attention.test.ts src/lib/business/sample-provider.test.ts src/lib/ai/screenshot-scope.test.ts src/app/api/ai/chat-to-order/guard.test.ts src/app/api/ai/screenshot-to-order/image.test.ts src/app/api/ai/screenshot-to-order/normalize-extraction.test.ts src/app/assistant/draft-lock.test.ts src/lib/security-integrity.test.ts",
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build --webpack",
     "start": "next start --hostname 127.0.0.1",

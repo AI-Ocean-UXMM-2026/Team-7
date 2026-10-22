@@ -1,5 +1,63 @@
 import { saveOrder } from "@/app/sales/actions";
 import { NextResponse } from "next/server";
+import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops } from "@/lib/auth/session";
+import { getOrders } from "@/lib/db";
+import { uuidSchema } from "@ocean/contracts";
+
+export async function GET(request: Request) {
+  try {
+    const session = await getCurrentSession();
+    if (!session) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    let targetShopId = searchParams.get("shop");
+
+    if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
+      const authorizedShops = getUserAuthorizedShops(session.userId);
+      if (authorizedShops.length === 0) {
+        return NextResponse.json({ error: "No authorized shop found" }, { status: 403 });
+      }
+      targetShopId = authorizedShops[0]!.shop_id;
+    }
+
+    const membership = verifyShopMembership(session.userId, targetShopId);
+    if (!membership.authorized) {
+      return NextResponse.json({ error: "Authorization denied" }, { status: 403 });
+    }
+
+    const query = searchParams.get("q")?.toLowerCase();
+    const status = searchParams.get("status");
+
+    let orders = getOrders(targetShopId, undefined, session.userId);
+
+    if (status) {
+      orders = orders.filter((o) => o.order_status === status);
+    }
+
+    if (query) {
+      orders = orders.filter((o) => {
+        const idMatch = o.id.toLowerCase().includes(query);
+        const nameMatch = o.customers?.name?.toLowerCase().includes(query);
+        const phoneMatch = o.customers?.phone?.includes(query);
+        const itemMatch = o.order_items?.some((i) => i.product_name.toLowerCase().includes(query));
+        return idMatch || nameMatch || phoneMatch || itemMatch;
+      });
+    }
+
+    return NextResponse.json({
+      shopId: targetShopId,
+      total: orders.length,
+      orders,
+      timestamp: new Date().toISOString(),
+    }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Failed to load orders"
+    }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   let body: unknown;

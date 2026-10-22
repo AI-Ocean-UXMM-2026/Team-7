@@ -39,3 +39,71 @@ test("missing or ambiguous details stay unknown", () => {
   assert.ok(result.missing_fields.includes("items.quantity"));
   assert.ok(result.missing_fields.includes("items.unit_price_mmk"));
 });
+
+test("copied Messenger sender labels provide the customer name", () => {
+  const result = parseSimulatedChat(
+    "Yoon Yati Linn: White tshirt L at 25,000 kyat 12:42 PM\nPhone: 09 777 222 111",
+  );
+  assert.equal(result.customer_name, "Yoon Yati Linn");
+  assert.equal(result.customer_phone, "09 777 222 111");
+});
+
+test("seller shorthand keeps the product line, address, quantity, and customer label separate", () => {
+  const result = parseSimulatedChat([
+    "black hoodie XL ငါးထည်ယူမယ်",
+    "Yankin ကိုပို့ပေးပါ",
+    "0912345678",
+    "COD ပါ",
+    "customer-Yoon",
+  ].join("\n"));
+  assert.equal(result.customer_name, "Yoon");
+  assert.equal(result.customer_phone, "0912345678");
+  assert.equal(result.delivery_address, "Yankin");
+  assert.equal(result.items[0]?.product_name, "black hoodie XL");
+  assert.equal(result.items[0]?.quantity, 5);
+});
+
+test("copied seller chat reads customer labels and an explicit quantity from separate lines", () => {
+  const result = parseSimulatedChat(
+    "black hoodie XL qty-2\nYankin ကိုပို့ပေးပါ\n0912345678\nCOD ပါ\ncustomer-Yoon",
+  );
+  assert.equal(result.customer_name, "Yoon");
+  assert.equal(result.delivery_address, "Yankin");
+  assert.equal(result.items[0]?.product_name, "black hoodie XL");
+  assert.equal(result.items[0]?.quantity, 2);
+});
+
+test("quantity stays missing when a product line has no explicit quantity", () => {
+  const result = parseSimulatedChat("black hoodie XL\ncustomer-Yoon");
+  assert.equal(result.items[0]?.quantity, null);
+  assert.ok(result.missing_fields.includes("items.quantity"));
+});
+
+test("accepts common English labels, x quantity notation, and delivery labels", () => {
+  const result = parseSimulatedChat([
+    "Name - Su Su",
+    "Phone: +95 9 421 555 888",
+    "Address - 22 Bogyoke Road, Yangon",
+    "Item: x2 black hoodie XL at 35000 MMK",
+  ].join("\n"));
+  assert.equal(result.customer_name, "Su Su");
+  assert.equal(result.customer_phone, "+95 9 421 555 888");
+  assert.equal(result.delivery_address, "22 Bogyoke Road, Yangon");
+  assert.equal(result.items[0]?.product_name, "black hoodie XL");
+  assert.equal(result.items[0]?.quantity, 2);
+  assert.equal(result.items[0]?.unit_price_mmk, 35000);
+});
+
+test("accepts Burmese labels and Burmese digit quantities", () => {
+  const result = parseSimulatedChat([
+    "အမည် - မေမေ",
+    "ဖုန်း - ၀၉၁၂၃၄၅၆၇၈၉",
+    "လိပ်စာ - မန္တလေး ၃၅ လမ်း",
+    "အနက်ရောင် hoodie ၂ ထည် ၃၅,၀၀၀ ကျပ်",
+  ].join("\n"));
+  assert.equal(result.customer_name, "မေမေ");
+  assert.equal(result.customer_phone, "09123456789");
+  assert.equal(result.delivery_address, "မန္တလေး ၃၅ လမ်း");
+  assert.equal(result.items[0]?.quantity, 2);
+  assert.equal(result.items[0]?.unit_price_mmk, 35000);
+});

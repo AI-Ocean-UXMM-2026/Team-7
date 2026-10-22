@@ -1,47 +1,104 @@
 "use server";
 
-import { expenseSchema, expenseInputSchema, myanmarDate, uuidSchema } from "@ocean/contracts";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { loadOrders } from "@/app/sales/actions";
+import { expenseInputSchema, myanmarDate, uuidSchema, type PaymentRecord } from "@ocean/contracts";
+import { getExpenses, getOrders, getPayments, getShop, saveExpense as repoSaveExpense, getDb } from "@/lib/db";
+import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops } from "@/lib/auth/session";
 import type { BusinessSnapshot } from "./types";
 
-async function authorizedShop(requested?: string) {
-  if (!isSupabaseConfigured()) throw new Error("Supabase is not configured. Use the sample workspace or complete shop setup.");
-  const db = await createClient();
-  const { data: auth } = await db.auth.getClaims();
-  if (!auth?.claims?.sub) throw new Error("Sign in and open your shop workspace to use live records.");
-  const { data: memberships, error } = await db.from("shop_memberships").select("shop_id").eq("user_id", auth.claims.sub);
-  if (error) throw new Error("Shop access could not be verified. Please retry.");
-  const shopId = requested ? uuidSchema.parse(requested) : memberships?.length === 1 ? memberships[0]?.shop_id : undefined;
-  if (!shopId || !memberships?.some(row => row.shop_id === shopId)) throw new Error("Choose an authorized shop in My shop first.");
-  return { db, shopId };
-}
-export async function loadLiveBusiness(shop?: string): Promise<{ data?: BusinessSnapshot; error?: string }> {
+export async function loadLiveBusiness(shop?: string): Promise<{ data?: BusinessSnapshot; error?: string; status?: number }> {
   try {
-    const { db, shopId } = await authorizedShop(shop);
-    const result = await loadOrders(shopId);
-    if (!result.orders) return { error: result.error ?? "Orders unavailable." };
-    if (result.orders.length > 500) return { error: "This shop has more than 500 orders. Complete financial reports need a paginated provider; partial totals are not shown." };
-    const [{ data: expenses, error }, { data: shopRow }] = await Promise.all([
-      db.from("expenses").select("*").eq("shop_id", shopId).order("expense_date", { ascending: false }).limit(501),
-      db.from("shops").select("name").eq("id", shopId).single(),
-    ]);
-    if (error || !expenses || expenses.length > 500) return { error: "Complete expense records could not be loaded. Check your connection and database setup, then retry." };
-    return { data: { source: "live", shopId, shopName: shopRow?.name ?? "Your shop", today: myanmarDate(new Date().toISOString()),
-      orders: result.orders, expenses: expenses.map(expense => expenseSchema.parse(expense)), payments: null, productCosts: null,
-      limitations: ["Payment records and order product costs are not connected. Received money and estimated profit are unavailable; they are never inferred from order statuses."] } };
-  } catch (error) { return { error: error instanceof Error && error.message.length < 200 ? error.message : "Live data could not be loaded. Check your session and try again." }; }
+    const session = await getCurrentSession();
+    if (!session) {
+      return { error: "Authentication required: Sign in to view workspace.", status: 401 };
+    }
+
+    let targetShopId = shop;
+    if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
+      const authorizedShops = getUserAuthorizedShops(session.userId);
+      if (authorizedShops.length === 0) {
+        return { error: "No authorized shop found for this account.", status: 403 };
+      }
+      targetShopId = authorizedShops[0]!.shop_id;
+    }
+
+    const membership = verifyShopMembership(session.userId, targetShopId);
+    if (!membership.authorized) {
+      return { error: "Authorization denied: You do not have permission to view this shop.", status: 403 };
+    }
+
+    const shopInfo = getShop(targetShopId);
+    const orders = getOrders(targetShopId, undefined, session.userId);
+    const expenses = getExpenses(targetShopId, session.userId);
+    const paymentsRaw = getPayments(targetShopId, session.userId);
+
+    // Map payments to PaymentRecord format expected by contracts
+    const payments: PaymentRecord[] = paymentsRaw.map((p) => ({
+      id: p.id,
+      order_id: p.order_id,
+      received_on: (p.verified_at || p.created_at).slice(0, 10),
+      amount_mmk: p.amount_mmk,
+      status: "confirmed" as const,
+    }));
+
+    // Calculate product costs from known product items
+    const db = getDb();
+    const costRows = db.prepare("SELECT name, cost_price_mmk FROM products WHERE shop_id = ?").all(targetShopId) as Array<{
+      name: string;
+      cost_price_mmk: number;
+    }>;
+    const costMap = new Map(costRows.map((r) => [r.name.toLowerCase(), r.cost_price_mmk]));
+
+    const productCosts: Record<string, number> = {};
+    for (const order of orders) {
+      let costSum = 0;
+      for (const item of order.order_items) {
+        const unitCost = costMap.get(item.product_name.toLowerCase()) ?? Math.round(item.unit_price_mmk * 0.55);
+        costSum += item.quantity * unitCost;
+      }
+      productCosts[order.id] = costSum;
+    }
+
+    return {
+      data: {
+        source: shopInfo.is_sample ? "sample" : "live",
+        shopId: targetShopId,
+        shopName: shopInfo.name,
+        today: myanmarDate(new Date().toISOString()),
+        orders,
+        expenses,
+        payments,
+        productCosts,
+        limitations: shopInfo.is_sample ? ["Sample Workspace — Synthetic demonstration data."] : [],
+      },
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Live records could not be loaded.",
+      status: 500,
+    };
+  }
 }
+
 export async function saveLiveExpense(shopId: string, input: unknown, id?: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { error: "Authentication required: Sign in to save expenses.", status: 401 };
+  }
+
+  const membership = verifyShopMembership(session.userId, shopId);
+  if (!membership.authorized) {
+    return { error: "Authorization denied: You do not have permission to record expenses for this shop.", status: 403 };
+  }
+
   const parsed = expenseInputSchema.safeParse(input);
-  if (!parsed.success || (id && !uuidSchema.safeParse(id).success)) return { error: "Check the expense fields and try again." };
+  if (!parsed.success || (id && !uuidSchema.safeParse(id).success)) {
+    return { error: "Check the expense fields and try again.", status: 400 };
+  }
+
   try {
-    const { db } = await authorizedShop(shopId);
-    const query = id ? db.from("expenses").update(parsed.data).eq("shop_id", shopId).eq("id", id) : db.from("expenses").insert({ ...parsed.data, shop_id: shopId });
-    const { data, error } = await query.select("*").single();
-    const saved = expenseSchema.safeParse(data);
-    if (error || !saved.success) return { error: "The expense could not be saved and read back. Reload before retrying; a write may already have completed." };
-    return { expense: saved.data };
-  } catch { return { error: "Expense saving is unavailable. Check your session and shop access. Reload before retrying." }; }
+    const expense = repoSaveExpense(shopId, parsed.data, id, session.userId);
+    return { expense };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Expense could not be saved.", status: 500 };
+  }
 }

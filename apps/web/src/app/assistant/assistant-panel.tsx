@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@ocean/ui";
 import {
   chatOrderExtractionSchema,
@@ -9,7 +9,7 @@ import {
   saveOrderSchema,
   type ChatOrderExtraction,
 } from "@ocean/contracts";
-import { calculateOrderTotals, parseSimulatedChat } from "@ocean/core";
+import { calculateOrderTotals } from "@ocean/core";
 import {
   canAnalyzeHostedDraft,
   canConfirmHostedDraft,
@@ -46,9 +46,6 @@ type EditableOrder = {
   discount_mmk_source: FieldSource;
   items: EditableItem[];
 };
-
-const englishSample = "Hi! Could I get two Mira tote bags at 22,500 kyat each? Deliver to 14 Inya Road, Yangon. The name is Thiri Mon. Phone 09 777 222 111.";
-const burmeseSample = "မင်္ဂလာပါ။ Mira tote bag နှစ်လုံး၊ တစ်လုံး ၂၂,၅၀၀ ကျပ်။ ရန်ကုန် အင်းလျားလမ်း ၁၄ ကိုပို့ပေးပါ။ နာမည်က သီရိမွန်ပါ။ ဖုန်း ၀၉ ၇၇၇ ၂၂၂ ၁၁၁။";
 
 function text(value: string | null) { return value ?? ""; }
 function amount(value: number | null) { return value === null ? "" : String(value); }
@@ -131,14 +128,15 @@ function SourceTag({ source: value }: { source: FieldSource }) {
   return <span className={`hosted-source hosted-source-${value}`}>{value === "extracted" ? "From message" : value === "manual" ? "Edited" : "Needs input"}</span>;
 }
 
-export function HostedAssistantPanel({ shopId, shopName }: { shopId: string; shopName: string }) {
-  const [view, setView] = useState<View>("home");
-  const [chat, setChat] = useState(englishSample);
+export function HostedAssistantPanel({ shopId, shopName, initialView = "home" }: { shopId: string; shopName: string; initialView?: View }) {
+  const [inFloatingWindow, setInFloatingWindow] = useState(false);
+  useEffect(() => { setInFloatingWindow(Boolean(window.floatingAssistant)); }, []);
+  const [view, setView] = useState<View>(initialView);
+  const [chat, setChat] = useState("");
   const [order, setOrder] = useState<EditableOrder>(() => emptyOrder());
   const [hasOrder, setHasOrder] = useState(false);
   const [draftPhase, setDraftPhase] = useState<HostedDraftPhase>("editable");
   const [orderId, setOrderId] = useState<string | null>(null);
-  const [mode, setMode] = useState<"live" | "simulation">("simulation");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -171,11 +169,6 @@ export function HostedAssistantPanel({ shopId, shopName }: { shopId: string; sho
     setChat(value);
   }
 
-  function useSampleChat() {
-    if (!draftIsMutable()) { lockedDraftNotice(); return; }
-    setChat(current => current.startsWith("မင်္ဂလာပါ") ? englishSample : burmeseSample);
-  }
-
   function addItem() {
     if (!draftIsMutable()) { lockedDraftNotice(); return; }
     setOrder(current => ({ ...current, items: [...current.items, { key: crypto.randomUUID(), product_name: "", product_name_source: "manual", quantity: "1", quantity_source: "manual", unit_price_mmk: "", unit_price_mmk_source: "missing" }] }));
@@ -205,25 +198,17 @@ export function HostedAssistantPanel({ shopId, shopName }: { shopId: string; sho
       if (!parsed.success) throw new Error(response.ok ? "The assistant returned an unsupported response." : "The hosted assistant could not analyze this conversation.");
       if (parsed.data.mode === "live") {
         setOrder(orderFromExtraction(parsed.data.extraction));
-        setMode("live");
         setNotice(parsed.data.message ?? "AI extraction complete. Review every field before saving.");
-      } else if (parsed.data.mode === "simulation") {
-        setOrder(orderFromExtraction(parsed.data.extraction));
-        setMode("simulation");
-        setNotice(parsed.data.message);
       } else {
-        setOrder(orderFromExtraction(parsed.data.fallback));
-        setMode("simulation");
-        setNotice(parsed.data.error);
+        setHasOrder(false);
+        setNotice(parsed.data.mode === "simulation" ? "AI extraction is currently unavailable. Nothing was saved." : parsed.data.error);
+        return;
       }
       setOrderId(crypto.randomUUID());
       setHasOrder(true);
     } catch (error) {
-      setOrder(orderFromExtraction(parseSimulatedChat(chat.trim())));
-      setOrderId(crypto.randomUUID());
-      setMode("simulation");
-      setHasOrder(true);
-      setNotice(error instanceof Error ? `${error.message} A clearly marked local simulation is ready for review; no order was saved.` : "The hosted assistant was unavailable. A clearly marked local simulation is ready for review; no order was saved.");
+      setHasOrder(false);
+      setNotice(error instanceof Error ? error.message : "AI extraction is currently unavailable. Nothing was saved.");
     } finally { setBusy(false); }
   }
 
@@ -283,8 +268,7 @@ export function HostedAssistantPanel({ shopId, shopName }: { shopId: string; sho
     setOrder(emptyOrder());
     setOrderId(null);
     setHasOrder(false);
-    setMode("simulation");
-    setChat(englishSample);
+    setChat("");
     setView("chat");
     setNotice("New draft ready. Review every value before confirming.");
   }
@@ -293,16 +277,16 @@ export function HostedAssistantPanel({ shopId, shopName }: { shopId: string; sho
   const errors = hasOrder ? validationErrors(order) : [];
   return <main className="hosted-assistant-shell">
     <header className="hosted-assistant-header">
-      <div><span className="eyebrow">Hosted seller assistant · {shopName}</span><h1>SaleSayar AI</h1><p>From conversation to a reviewed order.</p></div>
-      <span className="hosted-workspace-link">Sales Management remains in the web workspace</span>
+      <div><span className="eyebrow">Hosted seller assistant · {shopName}</span><h1>တူတူတွက်မယ်</h1><p>From conversation to a reviewed order.</p></div>
+      {inFloatingWindow ? <button type="button" className="hosted-back-link" onClick={() => void window.floatingAssistant?.backToAssistant()}>← Back to dolphin assistant</button> : <a className="hosted-workspace-link" href="/">Open workspace ↗</a>}
     </header>
     <div className="hosted-assistant-body">
-      <div className="hosted-assistant-ribbon"><span aria-hidden="true">●</span> Private hosted session <span>·</span> {mode === "live" ? "AI extraction" : "Simulation fallback when provider is unavailable"}</div>
+      <div className="hosted-assistant-ribbon"><span aria-hidden="true">●</span> Private workspace <span>·</span> AI extraction with seller review</div>
       {view === "home" ? <>
         <section className="hosted-welcome"><span className="eyebrow">A little help with the busy bits</span><h2>Your shop, a little simpler.</h2><p>Review every suggestion before anything reaches your orders.</p></section>
         <div className="hosted-action-list" aria-label="Choose an assistant workflow">
           <button className="hosted-action-card hosted-action-primary" onClick={() => { setView("chat"); setNotice(""); }}><span className="hosted-action-icon"><Icon name="sales" size={22} /></span><span><strong>Chat to Order</strong><small>Turn a customer conversation into an editable order</small></span><span aria-hidden="true">→</span></button>
-          <button className="hosted-action-card hosted-action-secondary" onClick={() => { setView("match"); setNotice(""); }}><span className="hosted-action-icon"><Icon name="wallet" size={22} /></span><span><strong>Screenshot to Order Match</strong><small>Preview a local image without verifying payment</small></span><span aria-hidden="true">→</span></button>
+          <button className="hosted-action-card hosted-action-secondary" onClick={() => { setView("match"); setNotice(""); }}><span className="hosted-action-icon"><Icon name="wallet" size={22} /></span><span><strong>Match Payment to Order</strong><small>Extract transaction details and review possible orders</small></span><span aria-hidden="true">→</span></button>
         </div>
         <div className="hosted-safety-note"><strong>Review first</strong><span>AI never saves an order without your confirmation. A screenshot alone cannot confirm received funds.</span></div>
       </> : <>
@@ -312,12 +296,11 @@ export function HostedAssistantPanel({ shopId, shopName }: { shopId: string; sho
           <label className="hosted-field-label" htmlFor="hosted-customer-chat">Customer conversation</label>
           <p className="hosted-field-hint">Paste English, Burmese, or mixed-language text. The seller reviews every extracted value.</p>
           <textarea id="hosted-customer-chat" className="hosted-chat-input" maxLength={20_000} value={chat} disabled={saving || confirmed} onChange={event => updateChat(event.target.value)} />
-          <button className="hosted-sample-link" disabled={saving || confirmed} onClick={useSampleChat}>文 Use {chat.startsWith("မင်္ဂလာပါ") ? "English" : "Burmese"} sample</button>
           <button className="hosted-primary-button" disabled={busy || saving || confirmed} onClick={() => void analyze()}>{busy ? "Dolphin is thinking…" : saving ? "Saving draft…" : confirmed ? "Saved · start a new draft below" : "Analyze conversation"}</button>
           {busy && <div className="hosted-status-card" role="status">Reading names, items, amounts, and missing details…</div>}
           {hasOrder && <section className="hosted-order-preview" aria-labelledby="hosted-order-heading">
-            <div className="hosted-preview-heading"><div><span className="eyebrow">Editable order draft</span><h3 id="hosted-order-heading">Review before confirmation</h3></div><span className={`hosted-mode hosted-mode-${mode}`}>{mode === "live" ? "AI" : "Simulation"}</span></div>
-            <p className="hosted-note">{mode === "live" ? "AI returned a structured draft. Confirm that every value matches the customer message." : "Simulation is clearly marked and never pretends to be a verified AI result."}</p>
+            <div className="hosted-preview-heading"><div><span className="eyebrow">Editable order draft</span><h3 id="hosted-order-heading">Review before confirmation</h3></div><span className="hosted-mode hosted-mode-live">AI</span></div>
+            <p className="hosted-note">AI returned a structured draft. Confirm that every value matches the customer message.</p>
             {errors.length > 0 && <div className="hosted-missing" role="status"><strong>Seller review needed</strong><span>Missing or invalid details stay visible until corrected. Phone is required for delivery.</span></div>}
             <div className="hosted-fields">
               <label>Customer name <SourceTag source={order.customer_name_source} /><input disabled={saving || confirmed} value={order.customer_name} onChange={event => editField("customer_name", event.target.value)} /></label>

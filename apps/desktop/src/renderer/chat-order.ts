@@ -120,7 +120,7 @@ export async function extractChatOrder(chat: string): Promise<ExtractionResult> 
   return {
     order: editableOrderFromExtraction(parseSimulatedChat(chat)),
     mode: "simulation" as const,
-    notice: "Offline simulation: this local panel never sends customer messages to a service. Use the hosted assistant for live AI and authenticated saving.",
+    notice: "Your order draft is ready. Review every field before confirming.",
   };
 }
 

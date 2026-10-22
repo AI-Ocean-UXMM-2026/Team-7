@@ -13,6 +13,7 @@
     "start": "pnpm --filter @ocean/web start",
     "desktop:dev": "pnpm --filter @ocean/desktop dev",
     "desktop:build": "pnpm --filter @ocean/desktop build",
+    "desktop:package": "pnpm --filter @ocean/desktop package",
     "desktop:start": "pnpm --filter @ocean/desktop start",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "pnpm -r --if-present typecheck"

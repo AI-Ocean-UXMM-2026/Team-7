@@ -30,6 +30,11 @@ test("sign-in and onboarding retain the intended destination without granting sh
 test("hosted assistant sign-in retains only the bounded assistant return path", () => {
   const shop = "10000000-0000-4000-8000-000000000001";
   assert.equal(assistantDestination(`/assistant?shop=${shop}`), `/assistant?shop=${shop}`);
+  assert.equal(assistantDestination("/assistant?view=match"), "/assistant?view=match");
+  const challenge = "a".repeat(64);
+  assert.equal(authDestination(`/assistant/connect?challenge=${challenge}`), `/assistant/connect?challenge=${challenge}`);
+  assert.equal(authDestination(`/assistant/connect?challenge=${challenge}&done=1`), `/assistant/connect?challenge=${challenge}&done=1`);
+  assert.equal(authDestination("/assistant/connect?challenge=invalid"), "/assistant");
   assert.equal(assistantDestination("/sales?shop=" + shop), "/assistant");
   const href = new URL(assistantSignInHref(`/assistant?shop=${shop}`), "https://local.invalid");
   assert.equal(href.pathname, "/assistant/login");

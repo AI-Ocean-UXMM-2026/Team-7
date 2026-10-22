@@ -5,13 +5,15 @@
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "concurrently --kill-others --names renderer,electron \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "dev": "vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && concurrently --kill-others --names renderer,electron \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "build:main": "vite build --config vite.main.config.ts",
     "build:renderer": "vite build",
     "build:preload": "vite build --config vite.preload.config.ts",
     "build": "pnpm build:main && pnpm build:preload && pnpm build:renderer",
+    "package": "pnpm package:win",
+    "package:win": "pnpm build && node scripts/package-win.mjs",
     "start": "electron .",
-    "test": "node --test src/main/launcher-drag.test.ts src/main/hosted-assistant.test.ts src/main/navigation-guard.test.ts src/renderer/draft-identity.test.ts",
+    "test": "node --test src/main/launcher-drag.test.ts src/main/hosted-assistant.test.ts src/main/navigation-guard.test.ts src/main/payment-review-image.test.ts src/main/website-url.test.ts src/renderer/conversation-tools.test.ts src/renderer/draft-identity.test.ts src/renderer/payment-review.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "dependencies": {

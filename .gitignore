@@ -153,6 +153,17 @@ vite.config.ts.timestamp-*
 *.key
 credentials*.json
 service-account*.json
+# Local SQLite database
+*.db
+*.db-*
+data/
 # Electron main/preload bundles and distributables
 **/dist-electron/
 **/release/
+
+# Temporary and agent directories
+scratch/
+.claude/
+.codex-build/
+.codex-output/
+agent/

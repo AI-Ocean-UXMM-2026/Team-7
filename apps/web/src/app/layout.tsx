@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell";
+import { ShellLanguageProvider } from "@/components/shell-language";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Dashboard · SaleSayar AI", template: "%s · SaleSayar AI" },
+  title: { default: "Dashboard · တူတူတွက်မယ်", template: "%s · တူတူတွက်မယ်" },
   description:
     "From Chat to Order, From Order to Profit. A workspace for Myanmar online sellers.",
   robots: { index: false, follow: false },
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <ShellLanguageProvider>
+          <AppShell>{children}</AppShell>
+        </ShellLanguageProvider>
       </body>
     </html>
   );

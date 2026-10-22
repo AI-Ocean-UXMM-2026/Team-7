@@ -1,10 +1,15 @@
 "use server";
 
-import { createShopSchema, recoveryEmailSchema, resetPasswordSchema, signInSchema, signUpSchema, uuidSchema } from "@ocean/contracts";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { authDestination, getAppUrl, shopDestination } from "@/lib/auth";
+import crypto from "node:crypto";
+import { createShopSchema, receivingAccountInputSchema, recoveryEmailSchema, resetPasswordSchema, signInSchema, signUpSchema } from "@ocean/contracts";
+import { redirect } from "next/navigation.js";
+import { createClient } from "../../lib/supabase/server.ts";
+import { isSupabaseConfigured } from "../../lib/supabase/config.ts";
+import { authDestination, getAppUrl, shopDestination } from "../../lib/auth.ts";
+import { clearSessionCookie, createSessionCookie, getCurrentSession } from "../../lib/auth/session.ts";
+import { getDb } from "../../lib/db/sqlite.ts";
+import { hashPassword, verifyPassword } from "../../lib/auth/password.ts";
+import { ensureLocalProfile } from "../../lib/auth/local-profile.ts";
 
 export type FormActionState = { error?: string; success?: string } | undefined;
 
@@ -22,12 +27,53 @@ export async function signInAction(
     password: readText(formData, "password"),
   });
   if (!parsed.success) return { error: "Enter a valid email and password (at least 8 characters)." };
-  if (!isSupabaseConfigured()) return { error: "Supabase setup is incomplete. Follow the setup steps in docs/MILESTONE_2A_1.md." };
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error) return { error: "Sign in failed. Check your email and password, then try again." };
-  redirect(authDestination(readText(formData, "next")));
+  const nextPath = authDestination(readText(formData, "next"));
+
+  // 1. Authenticate through supported provider if configured
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
+      if (error || !data.user) {
+        // FAIL CLOSED: Never fall back to local password bypass when provider rejects
+        return { error: "Invalid email or password." };
+      }
+      ensureLocalProfile({
+        id: data.user.id,
+        email: data.user.email,
+        user_metadata: data.user.user_metadata,
+      });
+      await createSessionCookie(data.user.id);
+      redirect(nextPath);
+    } catch (e: unknown) {
+      if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
+        throw e;
+      }
+      // Provider error/unavailable: FAIL CLOSED. Never fall back.
+      return { error: "Authentication service unavailable. Please check your credentials or retry." };
+    }
+  }
+
+  // 2. Local authentication: strictly verify password hash with scrypt
+  const db = getDb();
+  const profile = db.prepare("SELECT id, email, display_name, password_hash, status FROM profiles WHERE email = ?").get(parsed.data.email.toLowerCase().trim()) as
+    | { id: string; email: string; display_name: string; password_hash: string | null; status?: string | null }
+    | undefined;
+
+  if (!profile || !profile.password_hash || profile.status === "disabled" || profile.status === "revoked") {
+    // User not found, account disabled, or account has no password hash -> FAIL CLOSED
+    return { error: "Invalid email or password." };
+  }
+
+  const passwordValid = verifyPassword(parsed.data.password, profile.password_hash);
+  if (!passwordValid) {
+    // Wrong password -> FAIL CLOSED
+    return { error: "Invalid email or password." };
+  }
+
+  await createSessionCookie(profile.id);
+  redirect(nextPath);
 }
 
 export async function signUpAction(
@@ -40,21 +86,63 @@ export async function signUpAction(
     password: readText(formData, "password"),
   });
   if (!parsed.success) return { error: "Enter your name, a valid email, and a password of at least 8 characters." };
-  if (!isSupabaseConfigured()) return { error: "Supabase setup is incomplete. Follow the setup steps in docs/MILESTONE_2A_1.md." };
 
-  const supabase = await createClient();
-  const appUrl = getAppUrl();
-  const { data, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: { display_name: parsed.data.display_name },
-      emailRedirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next: authDestination(readText(formData, "next")) })}`,
-    },
-  });
-  if (error) return { error: "Account creation failed. Check the details or try signing in." };
-  if (data.session) redirect(authDestination(readText(formData, "next")));
-  return { success: "Account created. Check your email to confirm, then sign in." };
+  const nextPath = authDestination(readText(formData, "next"));
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const appUrl = getAppUrl();
+      const { data, error } = await supabase.auth.signUp({
+        email: parsed.data.email,
+        password: parsed.data.password,
+        options: {
+          data: { display_name: parsed.data.display_name },
+          emailRedirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next: nextPath })}`,
+        },
+      });
+      if (error) return { error: "Account creation failed. Check the details or try signing in." };
+      if (data.session && data.user) {
+        await createSessionCookie(data.user.id);
+        redirect(nextPath);
+      }
+      return { success: "Account created. Check your email to confirm, then sign in." };
+    } catch (e: unknown) {
+      if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) throw e;
+      return { error: "Account creation failed. Try again later." };
+    }
+  }
+
+  // Local signup with properly hashed password (scrypt + salt)
+  const db = getDb();
+  const existing = db.prepare("SELECT id FROM profiles WHERE email = ?").get(parsed.data.email.toLowerCase().trim());
+  if (existing) {
+    return { error: "An account with this email already exists. Sign in instead." };
+  }
+
+  const userId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const passwordHash = hashPassword(parsed.data.password);
+
+  db.prepare(`
+    INSERT INTO profiles (id, email, display_name, role, password_hash, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, parsed.data.email.toLowerCase().trim(), parsed.data.display_name, "owner", passwordHash, now, now);
+
+  // Create user's first shop
+  const shopId = crypto.randomUUID();
+  db.prepare(`
+    INSERT INTO shops (id, name, currency, is_sample, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(shopId, `${parsed.data.display_name}’s Shop`, "MMK", 0, now, now);
+
+  db.prepare(`
+    INSERT INTO shop_memberships (shop_id, user_id, role, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(shopId, userId, "owner", now);
+
+  await createSessionCookie(userId);
+  redirect(shopDestination(nextPath, shopId));
 }
 
 export async function googleSignInAction(formData: FormData): Promise<void> {
@@ -67,7 +155,6 @@ export async function googleSignInAction(formData: FormData): Promise<void> {
     options: { redirectTo: `${getAppUrl()}/auth/confirm?${new URLSearchParams({ next })}` },
   });
   if (error || !data.url) redirect(failure);
-  // Only follow the configured Supabase Auth origin, not arbitrary destinations.
   if (new URL(data.url).origin !== new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).origin) {
     redirect(failure);
   }
@@ -87,7 +174,6 @@ export async function requestRecoveryAction(
   if (error && (error.status === 429 || error.status === 0 || error.status === undefined || error.status >= 500)) {
     return { error: "Recovery is temporarily unavailable. Please try again later." };
   }
-  // Avoid disclosing whether an email address belongs to an account.
   return { success: "If this account supports password recovery, a reset link will arrive by email. Open it in this browser." };
 }
 
@@ -105,13 +191,17 @@ export async function resetPasswordAction(
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
   if (error) return { error: "Password could not be updated. Try a different password or request a new link." };
   await supabase.auth.signOut();
+  await clearSessionCookie();
   redirect("/login?auth=password-updated");
 }
 
 export async function signOutAction() {
+  await clearSessionCookie();
   if (isSupabaseConfigured()) {
-    const supabase = await createClient();
-    await supabase.auth.signOut();
+    try {
+      const supabase = await createClient();
+      await supabase.auth.signOut();
+    } catch {}
   }
   redirect("/login");
 }
@@ -122,15 +212,42 @@ export async function createShopAction(
 ): Promise<FormActionState> {
   const parsed = createShopSchema.safeParse({ name: readText(formData, "name") });
   if (!parsed.success) return { error: "Shop name must be between 2 and 120 characters." };
-  if (!isSupabaseConfigured()) return { error: "Supabase setup is incomplete. Follow the setup steps in docs/MILESTONE_2A_1.md." };
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("create_shop_for_current_user", {
-    p_name: parsed.data.name,
-  });
-  const shopId = uuidSchema.safeParse(data);
-  if (error || !shopId.success) {
-    return { error: "Shop setup is unavailable. Apply the documented database migration, then try again." };
+  const provider = readText(formData, "provider");
+  const accountName = readText(formData, "account_name");
+  const accountNumber = readText(formData, "account_number");
+  const hasReceivingAccount = Boolean(provider || accountName || accountNumber);
+  if (hasReceivingAccount && (!provider || !accountName || !accountNumber)) return { error: "Complete all three receiving account fields, or leave them blank for now." };
+
+  const session = await getCurrentSession();
+  if (!session) {
+    redirect("/login");
   }
-  redirect(shopDestination(readText(formData, "next"), shopId.data));
+
+  const db = getDb();
+  const newShopId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const receivingAccount = hasReceivingAccount ? receivingAccountInputSchema.safeParse({ shop_id: newShopId, provider, account_name: accountName, account_number: accountNumber }) : null;
+  if (receivingAccount && !receivingAccount.success) return { error: "Enter a valid payment method, account holder, and receiving number." };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(`
+    INSERT INTO shops (id, name, currency, is_sample, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    `).run(newShopId, parsed.data.name, "MMK", 0, now, now);
+
+    db.prepare(`
+    INSERT INTO shop_memberships (shop_id, user_id, role, created_at)
+    VALUES (?, ?, ?, ?)
+    `).run(newShopId, session.userId, "owner", now);
+    if (receivingAccount?.success) db.prepare("INSERT INTO shop_receiving_accounts (id, shop_id, provider, account_name, account_number, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(crypto.randomUUID(), newShopId, receivingAccount.data.provider, receivingAccount.data.account_name, receivingAccount.data.account_number, now);
+    db.exec("COMMIT");
+  } catch {
+    db.exec("ROLLBACK");
+    return { error: "Shop setup could not be saved. Please try again." };
+  }
+
+  redirect(shopDestination(readText(formData, "next"), newShopId));
 }

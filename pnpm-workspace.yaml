@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  electron-winstaller: set this to true or false
   esbuild: true
   supabase: true
   unrs-resolver: true

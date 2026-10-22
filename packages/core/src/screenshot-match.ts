@@ -16,8 +16,9 @@ export type MatchableOrder = {
 };
 
 export type ExistingPaymentEvidence = {
+  id?: string;
   sha256: string | null;
-  status: "pending_review" | "rejected";
+  status: "pending_review" | "rejected" | "verified";
   seller_reviewed: {
     transaction_reference?: string | null;
     provider?: string | null;
@@ -38,12 +39,12 @@ export type ScreenshotCandidate = {
   customer_relation: "match" | "mismatch" | "unavailable";
   reference_relation: "unavailable";
   reasons: string[];
-  duplicate_warning: "pending_evidence" | "rejected_evidence" | null;
+  duplicate_warning: "pending_evidence" | "rejected_evidence" | "verified_evidence" | null;
 };
 
 export type DuplicateWarning = {
   type: "reference_provider" | "image_hash";
-  status: "pending_review" | "rejected";
+  status: "pending_review" | "rejected" | "verified";
   message: string;
 };
 
@@ -71,7 +72,9 @@ function duplicateStatus(existing: ExistingPaymentEvidence[], evidence: Screensh
     const sameImage = Boolean(imageSha256 && row.sha256 && imageSha256 === row.sha256);
     return sameReferenceAndProvider || sameImage;
   });
-  return duplicate?.status === "pending_review" ? "pending_evidence" as const : duplicate ? "rejected_evidence" as const : null;
+  if (duplicate?.status === "pending_review") return "pending_evidence";
+  if (duplicate?.status === "verified") return "verified_evidence";
+  return duplicate ? "rejected_evidence" : null;
 }
 
 export function duplicateWarnings(
@@ -98,7 +101,9 @@ export function duplicateWarnings(
       status,
       message: status === "pending_review"
         ? "A same-shop evidence item with this provider and reference is already pending review."
-        : "A same-shop evidence item with this provider and reference was previously rejected.",
+        : status === "verified"
+          ? "A same-shop evidence item with this provider and reference was already linked to a seller-verified payment."
+          : "A same-shop evidence item with this provider and reference was previously rejected.",
     });
   }
   if (imageSha256 && existing.some(row => row.sha256 === imageSha256)) {
@@ -108,7 +113,9 @@ export function duplicateWarnings(
       status,
       message: status === "pending_review"
         ? "This image matches same-shop evidence that is already pending review."
-        : "This image matches same-shop evidence that was previously rejected.",
+        : status === "verified"
+          ? "This image matches same-shop evidence that was already linked to a seller-verified payment."
+          : "This image matches same-shop evidence that was previously rejected.",
     });
   }
   return warnings;
@@ -125,7 +132,11 @@ export function matchScreenshotOrders(
     const relation = amountRelation(evidence.amount_mmk, order.total_mmk);
     const payer = normalize(evidence.payer_name);
     const customer = normalize(order.customer_name);
-    const customerRelation = !payer || !customer ? "unavailable" as const : payer === customer ? "match" as const : "mismatch" as const;
+    const customerRelation = !payer || !customer
+      ? "unavailable" as const
+      : (payer === customer || payer.includes(customer) || customer.includes(payer))
+        ? "match" as const
+        : "mismatch" as const;
     const eligible = order.order_status === "confirmed" && ["unpaid", "partially_paid"].includes(order.payment_status);
     const reasons: string[] = [];
     if (relation === "exact") reasons.push("The extracted amount exactly matches the order total.");
@@ -142,7 +153,8 @@ export function matchScreenshotOrders(
     let matchState: ScreenshotCandidate["match_state"];
     if (!eligible) matchState = "ineligible";
     else if (relation === "exact" && customerRelation !== "mismatch") matchState = "exact";
-    else if (relation === "close" && customerRelation === "match") matchState = "possible";
+    else if (customerRelation === "match") matchState = "possible";
+    else if (relation === "close" && customerRelation !== "mismatch") matchState = "possible";
     else matchState = "uncertain";
     return {
       order_id: order.id,

@@ -1,8 +1,7 @@
 import { chatOrderExtractionSchema, chatOrderRequestSchema } from "@ocean/contracts";
 import { parseSimulatedChat } from "@ocean/core";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getCurrentSession, verifyShopMembership } from "@/lib/auth/session";
 import {
   MAX_PROVIDER_CHAT_CHARACTERS,
   MAX_PROVIDER_OUTPUT_BYTES,
@@ -77,20 +76,16 @@ async function readJsonBody(request: Request) {
 }
 
 async function authorizeShop(shopId: string) {
-  if (!isSupabaseConfigured()) return { available: false as const };
   try {
-    const db = await createClient();
-    const { data: auth } = await db.auth.getClaims();
-    const userId = auth?.claims?.sub;
-    if (typeof userId !== "string") return { available: true as const, authenticated: false as const };
-    const { data: membership, error } = await db
-      .from("shop_memberships")
-      .select("shop_id")
-      .eq("shop_id", shopId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) return { available: false as const };
-    return { available: true as const, authenticated: true as const, authorizedShop: Boolean(membership), userId };
+    const session = await getCurrentSession();
+    if (!session) {
+      return { available: true as const, authenticated: false as const, authorizedShop: false as const };
+    }
+    const membership = verifyShopMembership(session.userId, shopId);
+    if (!membership.authorized) {
+      return { available: true as const, authenticated: true as const, authorizedShop: false as const, userId: session.userId };
+    }
+    return { available: true as const, authenticated: true as const, authorizedShop: true as const, userId: session.userId };
   } catch {
     return { available: false as const };
   }
@@ -111,9 +106,6 @@ export async function POST(request: Request) {
 
   const parsed = chatOrderRequestSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Chat text must be between 1 and 20,000 characters." }, { status: 400 });
-
-  const apiKey = process.env.OPENAI_API_KEY?.trim() || process.env.AI_API_KEY?.trim();
-  if (!apiKey) return simulationResponse(parsed.data.chat, "Simulation mode: no server-side AI key is configured. Review every extracted field.");
 
   if (parsed.data.chat.length > MAX_PROVIDER_CHAT_CHARACTERS) {
     return boundaryError(providerBoundaryDecision({
@@ -144,6 +136,9 @@ export async function POST(request: Request) {
     usageAllowed: true,
   });
   if (!preliminary.ok) return boundaryError(preliminary);
+
+  const apiKey = process.env.AI_CHAT_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim() || process.env.AI_API_KEY?.trim();
+  if (!apiKey) return simulationResponse(parsed.data.chat, "Simulation mode: no server-side AI key is configured. Review every extracted field.");
   if (!reserveProviderUsage(`${authorization.userId}:${parsed.data.shop_id}`)) {
     return boundaryError(providerBoundaryDecision({
       chatLength: parsed.data.chat.length,

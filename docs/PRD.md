@@ -5,7 +5,7 @@ Status: Approved MVP Specification
 
 ## 1. Project Overview
 
-Working product name: SaleSayar AI (temporary).
+Product name: တူတူတွက်မယ်.
 
 Buildathon: Into the AI Ocean, hosted by UXMM.
 

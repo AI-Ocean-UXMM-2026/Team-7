@@ -14,7 +14,7 @@ export default defineConfig({
       input: {
         main: `${here}src/main/index.ts`,
       },
-      external: ["electron", "zod"],
+      external: ["electron"],
       output: {
         format: "cjs",
         entryFileNames: "[name].cjs",

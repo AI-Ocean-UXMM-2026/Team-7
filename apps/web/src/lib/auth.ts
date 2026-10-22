@@ -11,7 +11,7 @@ export function getAppUrl(): string {
 export function authDestination(next: string | null): string {
   if (!next || next.length > 1500 || !next.startsWith("/") || next.startsWith("//") || /[\\\u0000-\u0020]/.test(next)) return "/workspace";
   const url = new URL(next, "https://local.invalid");
-  if (!["/", "/sales", "/finance", "/settings", "/workspace", "/assistant", "/login/reset-password"].includes(url.pathname)) return "/workspace";
+  if (!["/", "/sales", "/finance", "/settings", "/workspace", "/assistant", "/assistant/connect", "/login/reset-password"].includes(url.pathname)) return "/workspace";
   const params = new URLSearchParams();
   if (["/", "/sales", "/finance", "/settings", "/assistant"].includes(url.pathname)) {
     const source = url.searchParams.get("source");
@@ -24,6 +24,13 @@ export function authDestination(next: string | null): string {
     if (tab && ["orders", "vouchers", "payments", "expenses", "reports"].includes(tab)) params.set("tab", tab);
     const q = url.searchParams.get("q");
     if (q) params.set("q", q.slice(0, 200));
+    if (url.pathname === "/assistant" && url.searchParams.get("view") === "match") params.set("view", "match");
+  }
+  if (url.pathname === "/assistant/connect") {
+    const challenge = url.searchParams.get("challenge");
+    if (!challenge || !/^[a-f0-9]{64}$/u.test(challenge)) return "/assistant";
+    params.set("challenge", challenge);
+    if (url.searchParams.get("done") === "1") params.set("done", "1");
   }
   return `${url.pathname}${params.size ? `?${params}` : ""}`;
 }

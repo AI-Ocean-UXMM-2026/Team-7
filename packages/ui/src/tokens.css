@@ -1,4 +1,4 @@
-/* Approved working palette: docs/DESIGN_SYSTEM.md. */
+/* Approved ocean-blue palette: docs/DESIGN_SYSTEM.md. */
 :root {
   --ocean-background: #eaf5ff;
   --ocean-background-secondary: #d8edff;
@@ -16,8 +16,19 @@
   --ocean-success-text: #086645;
   --ocean-warning-text: #80500d;
   --ocean-border: #d8e5f2;
-  --ocean-radius: 1.5rem;
-  --ocean-shadow: 0 8px 28px rgb(23 44 120 / 5%);
+  --ocean-border-subtle: #e5eef7;
+  --surface-workspace: #eaf5ff;
+  --surface-panel: #f8fbfe;
+  --surface-card: #ffffff;
+  --ocean-radius: 14px;
+  --ocean-radius-sm: 8px;
+  --ocean-radius-lg: 20px;
+  --ocean-radius-xl: 24px;
+  --ocean-radius-2xl: 32px;
+  --ocean-shadow: 0 10px 32px -4px rgba(23, 44, 120, 0.06), 0 4px 12px -2px rgba(23, 44, 120, 0.03);
+  --ocean-shadow-float: 0 16px 40px -6px rgba(36, 93, 208, 0.28);
+  --ocean-canvas: #edf1fa;
   --ocean-font:
-    "Inter", "Segoe UI", "Noto Sans Myanmar", "Myanmar Text", sans-serif;
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Myanmar", "Myanmar Text", sans-serif;
 }
+

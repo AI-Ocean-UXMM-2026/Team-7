@@ -53,12 +53,12 @@ export function AuthForm({ mode, notice, next = "/workspace", showGoogle = true,
         </form>
         {showRecovery && mode === "sign-in" && <Link className="auth-back" href="/login/forgot-password">Forgot password?</Link>}
         {showSignUp && <p className="auth-switch">
-          {mode === "sign-in" ? "New to SaleSayar AI? " : "Already have an account? "}
+          {mode === "sign-in" ? "New to တူတူတွက်မယ်? " : "Already have an account? "}
           <Link href={`${mode === "sign-in" ? "/login/signup" : "/login"}?${new URLSearchParams({ next })}`}>
             {mode === "sign-in" ? "Create an account" : "Sign in"}
           </Link>
         </p>}
-        {showBack && <Link className="auth-back" href="/">Return to sample dashboard</Link>}
+        {showBack && <Link className="auth-back" href="/demo">Explore the sample dashboard</Link>}
       </section>
     </main>
   );

@@ -3,6 +3,10 @@ import { AuthForm } from "@/app/login/auth-form";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { assistantDestination } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth/session";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Assistant sign in" };
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +15,7 @@ export default async function AssistantLoginPage({ searchParams }: {
 }) {
   const params = await searchParams;
   const next = assistantDestination(params.next ?? null);
+  if (await getCurrentSession()) redirect(next);
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
     const { data } = await supabase.auth.getClaims();

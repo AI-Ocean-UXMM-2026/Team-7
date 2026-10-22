@@ -54,3 +54,33 @@ test("duplicate checks use corrected seller-reviewed reference and provider", ()
   }, existing);
   assert.equal(originalValue.duplicate_warnings.length, 0);
 });
+
+test("verified evidence is reported as a same-shop duplicate signal without a fraud verdict", () => {
+  const result = matchScreenshotOrders([], {
+    amount_mmk: 52000, transaction_reference: "TX-VERIFIED", provider: "KBZPay", payer_name: null,
+  }, [{
+    sha256: "b".repeat(64),
+    status: "verified",
+    seller_reviewed: { transaction_reference: "TX-VERIFIED", provider: "KBZPay" },
+  }]);
+  assert.equal(result.duplicate_warnings[0]?.status, "verified");
+  assert.match(result.duplicate_warnings[0]?.message ?? "", /already linked to a seller-verified payment/);
+});
+
+test("payer name matching customer name promotes candidate to match and possible even with different or missing amount", () => {
+  // Payer name matches "Thiri Mon" (even partially or case-insensitively)
+  const result = matchScreenshotOrders(orders, {
+    amount_mmk: 100000, // Different amount from the 52000 MMK order
+    transaction_reference: "TX-PAYER-1",
+    provider: "KBZPay",
+    payer_name: "thiri mon",
+  });
+
+  const candidate = result.candidates[0];
+  assert.equal(candidate?.order_id, orders[0]?.id);
+  assert.equal(candidate?.customer_relation, "match");
+  assert.equal(candidate?.match_state, "possible");
+  assert.ok(candidate?.reasons.some((r) => r.includes("payer name matches the order customer name")));
+  assert.equal(candidate?.eligible, true);
+});
+

@@ -12,6 +12,15 @@ contextBridge.exposeInMainWorld("assistant", {
       channel: ipcChannels.command,
       action: "hide",
     }),
+  openWebsite: () =>
+    ipcRenderer.invoke(ipcChannels.command, {
+      channel: ipcChannels.command,
+      action: "openWebsite",
+    }),
+  analyzePayment: (image: string) => ipcRenderer.invoke(ipcChannels.analyzePayment, image),
+  rematchPayment: (input: unknown) => ipcRenderer.invoke(ipcChannels.rematchPayment, input),
+  savePaymentEvidence: (input: unknown) => ipcRenderer.invoke(ipcChannels.savePaymentEvidence, input),
+  receivingAccounts: (shopId: string) => ipcRenderer.invoke(ipcChannels.receivingAccounts, shopId),
   launcherDrag: (gesture: {
     phase: "start" | "move" | "end";
     pointerId: number;
@@ -29,4 +38,7 @@ contextBridge.exposeInMainWorld("assistant", {
       channel: ipcChannels.saveDraftScreenshot,
       screenshot,
     }),
+  readClipboardText: () => ipcRenderer.invoke(ipcChannels.readClipboardText),
+  readClipboardImage: () => ipcRenderer.invoke(ipcChannels.readClipboardImage),
+  writeClipboardText: (text: string) => ipcRenderer.invoke(ipcChannels.writeClipboardText, text),
 });

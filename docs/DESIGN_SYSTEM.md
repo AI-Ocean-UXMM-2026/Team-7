@@ -12,16 +12,17 @@ Target balance:
 
 Do not make the interface childish or generic.
 
-Use the approved Figma design as the primary visual reference.
+Use the shipped product components and this document as the visual source of truth.
 
 ## Colors
 
-Working palette:
+Ocean-blue palette:
 
 - Main background: #EAF5FF
 - Secondary background: #D8EDFF
 - Sidebar navy: #172C78
 - Primary interactive blue: #3478F6
+- Strong blue: #245DD0
 - Aqua accent: #37C9D9
 - Text: #183153
 - White cards: #FFFFFF
@@ -29,7 +30,7 @@ Working palette:
 - Warning: #F2AE40
 - Error: #E96565
 
-Exact values may be refined from the approved Figma file.
+Colors must retain readable contrast and keep financial status meaning consistent.
 
 ## Typography
 
@@ -80,7 +81,7 @@ Forms must support clear quantity editing and missing-field correction.
 
 ## Finance Management
 
-Use the approved Finance Management page as the visual foundation for other screens.
+Use Finance Management as the product’s density and trust reference for other screens.
 
 Include readable filtered charts, summary cards, and detailed tables.
 
@@ -141,15 +142,11 @@ Store approved mascot files under assets/dolphin.
 Store Figma screenshots and references under assets/design-references.
 
 Do not replace the mascot with a newly invented character without approval.
-## Approved Design Reference
+## Product Design Reference
 
-Our current UI/UX prototype is a Figma Make website:
+The implemented design system, shared components, and validated seller workflows are the visual source of truth.
 
-https://entry-align-51407368.figma.site/
-
-Use this as the primary visual reference for layout, navigation, colors, component styling, and interactions.
-
-Finance Management is our preferred visual design reference.
+Finance Management remains the preferred density and financial-trust reference.
 
 The website has:
 - Dashboard
@@ -158,9 +155,7 @@ The website has:
 - Settings
 - Floating dolphin assistant
 
-Codex should inspect the live website using a browser-capable environment when available.
-
-If the website cannot be inspected, report that limitation rather than inventing the design.
+Inspect the running website at desktop and mobile widths before completing visual milestones.
 
 The implementation must follow our approved PRD and design specifications.
 
@@ -168,21 +163,13 @@ The final product name is undecided.
 
 ## Approved Design Source
 
-Our approved UI reference is the Figma Make project and published Figma Make website.
-
-Primary design reference:
-https://entry-align-51407368.figma.site/
-
-The team uses the Figma Make app as the main design source of truth.
-
 Implementation should follow:
-1. This DESIGN_SYSTEM.md file
-2. The approved Figma Make UI
-3. The official dolphin assets in `assets/dolphin/`
+1. This DESIGN_SYSTEM.md file.
+2. The product requirements and user flows.
+3. Existing shared components and design tokens.
+4. The official dolphin assets in `assets/dolphin/`.
 
-Do not redesign the interface based only on text requirements if the Figma Make design is available.
-
-If implementation details are unclear, follow the latest approved Figma Make version.
+When details are unclear, prefer the option that makes seller decisions faster and financial state easier to verify.
 
 ## Mascot Assets
 

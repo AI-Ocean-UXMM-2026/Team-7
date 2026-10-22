@@ -5,6 +5,7 @@ import {
 import { type ExistingPaymentEvidence, type MatchableOrder } from "@ocean/core";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getCurrentSession, verifyShopMembership } from "@/lib/auth/session";
 import { completeMatchScope, MATCH_CONTEXT_LIMIT } from "./screenshot-scope";
 
 export type ScreenshotDbClient = Awaited<ReturnType<typeof createClient>>;
@@ -13,6 +14,20 @@ export type AuthorizationResult =
   | { available: false; db?: undefined; userId?: undefined }
   | { available: true; authenticated: false; db: ScreenshotDbClient; userId?: undefined; authorizedShop?: false }
   | { available: true; authenticated: true; authorizedShop: boolean; db: ScreenshotDbClient; userId: string };
+
+export type LocalScreenshotAuthorization =
+  | { sessionPresent: false }
+  | { sessionPresent: true; authorizedShop: boolean; userId: string };
+
+export async function authorizeLocalScreenshotShop(shopId: string): Promise<LocalScreenshotAuthorization> {
+  const session = await getCurrentSession();
+  if (!session) return { sessionPresent: false };
+  return {
+    sessionPresent: true,
+    authorizedShop: verifyShopMembership(session.userId, shopId).authorized,
+    userId: session.userId,
+  };
+}
 
 export async function authorizeScreenshotShop(shopId: string): Promise<AuthorizationResult> {
   if (!isSupabaseConfigured()) return { available: false };
@@ -49,6 +64,7 @@ const orderSelection = "*, customers(name, phone), order_items(*)";
 export async function loadScreenshotMatchContext(
   db: ScreenshotDbClient,
   shopId: string,
+  excludedEvidenceId?: string,
 ): Promise<{ ok: true; context: MatchContext } | { ok: false; message: string }> {
   const { data: orderRows, error: orderError } = await db
     .from("orders")
@@ -76,17 +92,18 @@ export async function loadScreenshotMatchContext(
 
   const { data: evidenceRows, error: evidenceError } = await db
     .from("payment_evidence")
-    .select("sha256,status,seller_reviewed")
+    .select("id,sha256,status,seller_reviewed")
     .eq("shop_id", shopId)
     .limit(MATCH_CONTEXT_LIMIT + 1);
   if (evidenceError && !isMissingEvidenceSchema(evidenceError)) return { ok: false, message: "Same-shop evidence could not be checked. No payment decision was made; retry after the connection is available." };
-  const evidenceScope = completeMatchScope(evidenceRows);
+  const filteredEvidenceRows = excludedEvidenceId ? (evidenceRows ?? []).filter(row => row.id !== excludedEvidenceId) : evidenceRows;
+  const evidenceScope = completeMatchScope(filteredEvidenceRows);
   if (!evidenceError && !evidenceScope.complete) return { ok: false, message: `Matching is unavailable because this shop has more than ${MATCH_CONTEXT_LIMIT} evidence records. The complete duplicate scope could not be checked safely, so no candidate or payment decision was made.` };
   const existing: ExistingPaymentEvidence[] = [];
   for (const row of (!evidenceError && evidenceScope.complete ? evidenceScope.rows : [])) {
     const parsed = screenshotExtractionSchema.safeParse(row.seller_reviewed);
-    if (!parsed.success || !["pending_review", "rejected"].includes(row.status)) return { ok: false, message: "A same-shop evidence record has unsupported review data, so duplicate checking was stopped without a payment decision." };
-    existing.push({ sha256: typeof row.sha256 === "string" ? row.sha256 : null, status: row.status as ExistingPaymentEvidence["status"], seller_reviewed: parsed.data });
+    if (!parsed.success || !["pending_review", "rejected", "verified"].includes(row.status)) return { ok: false, message: "A same-shop evidence record has unsupported review data, so duplicate checking was stopped without a payment decision." };
+    existing.push({ id: row.id, sha256: typeof row.sha256 === "string" ? row.sha256 : null, status: row.status as ExistingPaymentEvidence["status"], seller_reviewed: parsed.data });
   }
   return { ok: true, context: { orders, existing, evidenceSchemaAvailable: !evidenceError } };
 }

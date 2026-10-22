@@ -94,13 +94,13 @@ export function Launcher() {
   }
 
   return (
-    <main className="launcher-stage" aria-label="SaleSayar floating assistant">
+    <main className="launcher-stage" aria-label="တူတူတွက်မယ် floating assistant">
       <button
         ref={buttonRef}
         className="launcher-button"
         data-interacting={interacting}
-        aria-label="Open SaleSayar AI assistant"
-        title="Open SaleSayar AI assistant"
+        aria-label="Open တူတူတွက်မယ် assistant"
+        title="Open တူတူတွက်မယ် assistant"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}

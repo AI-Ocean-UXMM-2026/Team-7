@@ -84,6 +84,7 @@ export { parseSimulatedChat } from "./chat-to-order.ts";
 export type { ChatOrderExtraction, ChatOrderExtractionItem } from "./chat-to-order.ts";
 
 export { duplicateWarnings, matchScreenshotOrders } from "./screenshot-match.ts";
+export { compareReceiptRecipient } from "./receipt-recipient.ts";
 export type {
   DuplicateWarning,
   ExistingPaymentEvidence,

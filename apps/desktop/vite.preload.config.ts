@@ -11,11 +11,11 @@ export default defineConfig({
     emptyOutDir: false,
     minify: false,
     rollupOptions: {
-      input: `${here}src/main/preload.ts`,
+      input: { preload: `${here}src/main/preload.ts` },
       external: ["electron"],
       output: {
         format: "cjs",
-        entryFileNames: "preload.cjs",
+        entryFileNames: "[name].cjs",
       },
     },
   },
