@@ -5455,21 +5455,23 @@ html,
 .title-copy {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 .title-copy strong {
   display: block;
-  font-size: 0.92rem;
-  line-height: 1.25;
+  font-size: 0.9rem;
+  line-height: 1.2;
   font-weight: 700;
   color: #ffffff;
 }
 .title-copy small {
   display: block;
   color: #b8eaf0;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  margin-top: 1px;
 }
 .window-actions {
   display: flex;
