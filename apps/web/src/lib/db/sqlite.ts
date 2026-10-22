@@ -26,12 +26,23 @@ function getDbPath(): string {
   if (process.env.SALESAYAR_DB_PATH) {
     return process.env.SALESAYAR_DB_PATH;
   }
-  const dbPath = resolveDbPath();
-  const dir = path.dirname(dbPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  // On Vercel / AWS Lambda, the root filesystem is read-only.
+  // /tmp is the only writable directory for SQLite databases.
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpDir = process.platform === "win32" ? (process.env.TEMP || "C:\\temp") : "/tmp";
+    return path.join(tmpDir, "salesayar.db");
   }
-  return dbPath;
+  try {
+    const dbPath = resolveDbPath();
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return dbPath;
+  } catch {
+    const tmpDir = process.platform === "win32" ? (process.env.TEMP || "C:\\temp") : "/tmp";
+    return path.join(tmpDir, "salesayar.db");
+  }
 }
 
 export function setDb(db: DatabaseSync | null): void {
@@ -55,7 +66,15 @@ export function getDb(): DatabaseSync {
 
   // Enable WAL mode and foreign keys for high reliability and concurrency
   if (dbPath !== ":memory:") {
-    db.exec("PRAGMA journal_mode = WAL;");
+    try {
+      db.exec("PRAGMA journal_mode = WAL;");
+    } catch {
+      try {
+        db.exec("PRAGMA journal_mode = DELETE;");
+      } catch {
+        // Fallback for memory or restricted disk
+      }
+    }
   }
   db.exec("PRAGMA foreign_keys = ON;");
 
