@@ -118,7 +118,13 @@ export async function signUpAction(
           emailRedirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next: nextPath })}`,
         },
       });
-      if (error) return { error: "Account creation failed. Check the details or try signing in." };
+      if (error) {
+        return {
+          error: error.message?.includes("already registered")
+            ? "An account with this email already exists. Sign in instead."
+            : error.message || "Account creation failed. Check the details or try signing in.",
+        };
+      }
       if (data.session && data.user) {
         ensureLocalProfile({
           id: data.user.id,
@@ -128,6 +134,22 @@ export async function signUpAction(
         await createSessionCookie(data.user.id);
         redirect(nextPath);
       }
+
+      // If email confirmation is disabled or session was omitted, attempt immediate sign-in
+      const loginRes = await supabase.auth.signInWithPassword({
+        email: parsed.data.email,
+        password: parsed.data.password,
+      });
+      if (loginRes.data?.session && loginRes.data?.user) {
+        ensureLocalProfile({
+          id: loginRes.data.user.id,
+          email: loginRes.data.user.email,
+          user_metadata: loginRes.data.user.user_metadata,
+        });
+        await createSessionCookie(loginRes.data.user.id);
+        redirect(nextPath);
+      }
+
       return { success: "Account created. Check your email to confirm, then sign in." };
     } catch (e: unknown) {
       if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) throw e;
@@ -169,7 +191,8 @@ export async function signUpAction(
 
 export async function googleSignInAction(formData: FormData): Promise<void> {
   const next = authDestination(readText(formData, "next"));
-  const failure = `/login?${new URLSearchParams({ auth: "failed", next })}`;
+  const failure = (reason?: string) =>
+    `/login?${new URLSearchParams({ auth: "failed", ...(reason ? { reason } : {}), next })}`;
   if (!isSupabaseConfigured()) redirect(`/login?${new URLSearchParams({ auth: "configuration", next })}`);
   const supabase = await createClient();
   const appUrl = await getDynamicAppUrl();
@@ -177,9 +200,12 @@ export async function googleSignInAction(formData: FormData): Promise<void> {
     provider: "google",
     options: { redirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next })}` },
   });
-  if (error || !data.url) redirect(failure);
+  if (error || !data.url) {
+    console.error("Google OAuth initiation error:", error);
+    redirect(failure(error?.message || "oauth-failed"));
+  }
   if (new URL(data.url).origin !== new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).origin) {
-    redirect(failure);
+    redirect(failure("Origin mismatch"));
   }
   redirect(data.url);
 }

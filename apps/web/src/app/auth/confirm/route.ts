@@ -9,14 +9,26 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = request.nextUrl.searchParams.get("type");
+  const errorParam = request.nextUrl.searchParams.get("error");
+  const errorDesc = request.nextUrl.searchParams.get("error_description");
   const hostOrigin = request.nextUrl.origin && !request.nextUrl.origin.includes("invalid")
     ? request.nextUrl.origin
     : undefined;
   const origin = getAppUrl(hostOrigin);
   const next = authDestination(request.nextUrl.searchParams.get("next"));
-  const failure = () => NextResponse.redirect(new URL(`/login?${new URLSearchParams({ auth: "failed", next })}`, origin));
-  if (!isSupabaseConfigured() || request.nextUrl.searchParams.has("error")) {
-    return failure();
+  const failure = (reason?: string) =>
+    NextResponse.redirect(
+      new URL(
+        `/login?${new URLSearchParams({ auth: "failed", ...(reason ? { reason } : {}), next })}`,
+        origin,
+      ),
+    );
+  if (!isSupabaseConfigured()) {
+    return failure("configuration");
+  }
+  if (errorParam || errorDesc) {
+    console.error("Auth callback error parameter:", errorParam, errorDesc);
+    return failure(errorDesc || errorParam || "callback-error");
   }
 
   const supabase = await createClient();
@@ -25,10 +37,13 @@ export async function GET(request: NextRequest) {
     : tokenHash && (type === "email" || type === "signup" || type === "recovery")
       ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
       : null;
-  if (!result || result.error) return failure();
+  if (!result || result.error) {
+    console.error("Auth verification error:", result?.error);
+    return failure(result?.error?.message || "verification-failed");
+  }
 
   const user = (result.data.user ?? result.data.session?.user) as LocalAuthUser | null | undefined;
-  if (!user?.id) return failure();
+  if (!user?.id) return failure("no-user-id");
 
   if (type !== "recovery") {
     ensureLocalProfile(user);
