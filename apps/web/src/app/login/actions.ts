@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import { createShopSchema, receivingAccountInputSchema, recoveryEmailSchema, resetPasswordSchema, signInSchema, signUpSchema } from "@ocean/contracts";
+import { headers } from "next/headers.js";
 import { redirect } from "next/navigation.js";
 import { createClient } from "../../lib/supabase/server.ts";
 import { isSupabaseConfigured } from "../../lib/supabase/config.ts";
@@ -16,6 +17,22 @@ export type FormActionState = { error?: string; success?: string } | undefined;
 function readText(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" ? value : "";
+}
+
+async function getDynamicAppUrl(): Promise<string> {
+  try {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") || h.get("host");
+    const proto =
+      h.get("x-forwarded-proto") ||
+      (host?.includes("localhost") || host?.includes("127.0.0.1") ? "http" : "https");
+    if (host) {
+      return getAppUrl(`${proto}://${host}`);
+    }
+  } catch {
+    // outside request context or testing
+  }
+  return getAppUrl();
 }
 
 export async function signInAction(
@@ -92,7 +109,7 @@ export async function signUpAction(
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
-      const appUrl = getAppUrl();
+      const appUrl = await getDynamicAppUrl();
       const { data, error } = await supabase.auth.signUp({
         email: parsed.data.email,
         password: parsed.data.password,
@@ -103,6 +120,11 @@ export async function signUpAction(
       });
       if (error) return { error: "Account creation failed. Check the details or try signing in." };
       if (data.session && data.user) {
+        ensureLocalProfile({
+          id: data.user.id,
+          email: data.user.email,
+          user_metadata: data.user.user_metadata,
+        });
         await createSessionCookie(data.user.id);
         redirect(nextPath);
       }
@@ -150,9 +172,10 @@ export async function googleSignInAction(formData: FormData): Promise<void> {
   const failure = `/login?${new URLSearchParams({ auth: "failed", next })}`;
   if (!isSupabaseConfigured()) redirect(`/login?${new URLSearchParams({ auth: "configuration", next })}`);
   const supabase = await createClient();
+  const appUrl = await getDynamicAppUrl();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: `${getAppUrl()}/auth/confirm?${new URLSearchParams({ next })}` },
+    options: { redirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next })}` },
   });
   if (error || !data.url) redirect(failure);
   if (new URL(data.url).origin !== new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).origin) {
@@ -168,8 +191,9 @@ export async function requestRecoveryAction(
   if (!parsed.success) return { error: "Enter a valid email address." };
   if (!isSupabaseConfigured()) return { error: "Supabase setup is incomplete." };
   const supabase = await createClient();
+  const appUrl = await getDynamicAppUrl();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${getAppUrl()}/auth/confirm?next=/login/reset-password`,
+    redirectTo: `${appUrl}/auth/confirm?next=/login/reset-password`,
   });
   if (error && (error.status === 429 || error.status === 0 || error.status === undefined || error.status >= 500)) {
     return { error: "Recovery is temporarily unavailable. Please try again later." };

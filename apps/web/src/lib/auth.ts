@@ -1,7 +1,41 @@
-export function getAppUrl(): string {
-  const url = new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3000");
-  if (url.username || url.password ||
-    !(url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))) {
+export function getAppUrl(originHint?: string): string {
+  if (originHint) {
+    try {
+      const parsed = new URL(originHint);
+      if (
+        !parsed.username &&
+        !parsed.password &&
+        (parsed.protocol === "https:" ||
+          (parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname)))
+      ) {
+        return parsed.origin;
+      }
+    } catch {
+      // Ignore invalid hint and proceed with environment checks
+    }
+  }
+
+  let envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const vercelEnv =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+    process.env.VERCEL_URL?.trim();
+
+  if (
+    (!envUrl || (vercelEnv && (envUrl.includes("127.0.0.1") || envUrl.includes("localhost")))) &&
+    vercelEnv
+  ) {
+    envUrl = `https://${vercelEnv}`;
+  }
+
+  const url = new URL(envUrl ?? "http://127.0.0.1:3000");
+  if (
+    url.username ||
+    url.password ||
+    !(
+      url.protocol === "https:" ||
+      (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))
+    )
+  ) {
     throw new Error("NEXT_PUBLIC_APP_URL must be HTTPS or a local development URL.");
   }
   return url.origin;

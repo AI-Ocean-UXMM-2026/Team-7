@@ -9,7 +9,10 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = request.nextUrl.searchParams.get("type");
-  const origin = getAppUrl();
+  const hostOrigin = request.nextUrl.origin && !request.nextUrl.origin.includes("invalid")
+    ? request.nextUrl.origin
+    : undefined;
+  const origin = getAppUrl(hostOrigin);
   const next = authDestination(request.nextUrl.searchParams.get("next"));
   const failure = () => NextResponse.redirect(new URL(`/login?${new URLSearchParams({ auth: "failed", next })}`, origin));
   if (!isSupabaseConfigured() || request.nextUrl.searchParams.has("error")) {
