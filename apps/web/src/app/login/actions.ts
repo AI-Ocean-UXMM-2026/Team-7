@@ -61,14 +61,11 @@ export async function signInAction(
         // FAIL CLOSED: Never fall back to local password bypass when provider rejects
         return { error: "Invalid email or password." };
       }
-      const { shopId } = ensureLocalProfile({
+      const { shopId, displayName } = ensureLocalProfile({
         id: data.user.id,
         email: data.user.email,
         user_metadata: data.user.user_metadata,
       });
-      const displayName = typeof data.user.user_metadata?.display_name === "string"
-        ? data.user.user_metadata.display_name
-        : undefined;
       await createSessionCookie(data.user.id, undefined, {
         email: data.user.email ?? undefined,
         displayName,
@@ -138,14 +135,11 @@ export async function signUpAction(
         };
       }
       if (data.session && data.user) {
-        const { shopId } = ensureLocalProfile({
+        const { shopId, displayName } = ensureLocalProfile({
           id: data.user.id,
           email: data.user.email,
           user_metadata: data.user.user_metadata,
         });
-        const displayName = typeof data.user.user_metadata?.display_name === "string"
-          ? data.user.user_metadata.display_name
-          : undefined;
         await createSessionCookie(data.user.id, undefined, {
           email: data.user.email ?? undefined,
           displayName,
@@ -160,14 +154,11 @@ export async function signUpAction(
         password: parsed.data.password,
       });
       if (loginRes.data?.session && loginRes.data?.user) {
-        const { shopId } = ensureLocalProfile({
+        const { shopId, displayName } = ensureLocalProfile({
           id: loginRes.data.user.id,
           email: loginRes.data.user.email,
           user_metadata: loginRes.data.user.user_metadata,
         });
-        const displayName = typeof loginRes.data.user.user_metadata?.display_name === "string"
-          ? loginRes.data.user.user_metadata.display_name
-          : undefined;
         await createSessionCookie(loginRes.data.user.id, undefined, {
           email: loginRes.data.user.email ?? undefined,
           displayName,
@@ -229,7 +220,12 @@ export async function googleSignInAction(formData: FormData): Promise<void> {
   const appUrl = await getDynamicAppUrl();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next })}` },
+    options: {
+      redirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next })}`,
+      queryParams: {
+        prompt: "select_account",
+      },
+    },
   });
   if (error || !data.url) {
     console.error("Google OAuth initiation error:", error);

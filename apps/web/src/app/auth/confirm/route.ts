@@ -46,11 +46,7 @@ export async function GET(request: NextRequest) {
   if (!user?.id) return failure("no-user-id");
 
   if (type !== "recovery") {
-    const displayName =
-      typeof user.user_metadata?.display_name === "string" && user.user_metadata.display_name.trim()
-        ? user.user_metadata.display_name.trim()
-        : user.email?.split("@")[0] || "Merchant";
-    const { shopId } = ensureLocalProfile(user);
+    const { shopId, displayName } = ensureLocalProfile(user);
     const sessionToken = await createSessionCookie(user.id, undefined, {
       email: user.email ?? undefined,
       displayName,

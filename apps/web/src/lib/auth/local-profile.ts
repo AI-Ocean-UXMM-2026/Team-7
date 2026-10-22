@@ -4,8 +4,41 @@ import { getDb, SAMPLE_SHOP_ID } from "../db/sqlite.ts";
 export type LocalAuthUser = {
   id: string;
   email?: string | null;
-  user_metadata?: { display_name?: unknown } | null;
+  user_metadata?: {
+    display_name?: unknown;
+    full_name?: unknown;
+    name?: unknown;
+    given_name?: unknown;
+  } | null;
 };
+
+/**
+ * Extract the best human-readable name from user metadata.
+ * Google OAuth provides `full_name`, `name`, and `given_name`.
+ * Form sign-up provides `display_name`.
+ */
+export function extractDisplayName(user: LocalAuthUser): string {
+  const meta = user.user_metadata;
+  if (typeof meta?.full_name === "string" && meta.full_name.trim()) {
+    return meta.full_name.trim();
+  }
+  if (typeof meta?.name === "string" && meta.name.trim()) {
+    return meta.name.trim();
+  }
+  if (typeof meta?.display_name === "string" && meta.display_name.trim()) {
+    return meta.display_name.trim();
+  }
+  if (typeof meta?.given_name === "string" && meta.given_name.trim()) {
+    return meta.given_name.trim();
+  }
+  if (user.email && user.email.includes("@")) {
+    const localPart = user.email.split("@")[0]?.trim();
+    if (localPart) {
+      return localPart.charAt(0).toUpperCase() + localPart.slice(1);
+    }
+  }
+  return "Merchant";
+}
 
 /**
  * Deterministically produce an RFC4122 v4-compliant UUID from a user ID.
@@ -21,13 +54,10 @@ export function deterministicShopId(userId: string): string {
  * Ensure a Supabase-authenticated user can resolve a SaleSayar workspace session.
  * Guarantees profile, primary live store, and sample boutique access exist on every container.
  */
-export function ensureLocalProfile(user: LocalAuthUser): { shopId: string } {
+export function ensureLocalProfile(user: LocalAuthUser): { shopId: string; displayName: string } {
   const db = getDb();
   const now = new Date().toISOString();
-  const displayName =
-    typeof user.user_metadata?.display_name === "string" && user.user_metadata.display_name.trim()
-      ? user.user_metadata.display_name.trim()
-      : user.email?.split("@")[0] || "Merchant";
+  const displayName = extractDisplayName(user);
 
   db.prepare(`
     INSERT OR IGNORE INTO profiles (id, email, display_name, role, password_hash, status, created_at, updated_at)
@@ -37,7 +67,7 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string } {
   db.prepare(`
     UPDATE profiles
     SET email = CASE WHEN email IS NULL OR email = '' THEN ? ELSE email END,
-        display_name = CASE WHEN display_name IS NULL OR display_name = '' THEN ? ELSE display_name END,
+        display_name = CASE WHEN display_name IS NULL OR display_name = '' OR display_name = 'Merchant' THEN ? ELSE display_name END,
         updated_at = ?
     WHERE id = ?
   `).run(user.email ?? "", displayName, now, user.id);
@@ -69,11 +99,24 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string } {
     `).run(targetShopId, user.id, now);
   }
 
+  // Update generic shop names to user's real store name if applicable
+  if (displayName !== "Merchant") {
+    try {
+      db.prepare(`
+        UPDATE shops
+        SET name = ?
+        WHERE id = ? AND (name = 'Merchant’s Shop' OR name = 'Merchant Store')
+      `).run(`${displayName}’s Shop`, targetShopId);
+    } catch {
+      // Non-critical
+    }
+  }
+
   // Also ensure owner membership to the sample demo boutique
   db.prepare(`
     INSERT OR IGNORE INTO shop_memberships (shop_id, user_id, role, created_at)
     VALUES (?, ?, 'owner', ?)
   `).run(SAMPLE_SHOP_ID, user.id, now);
 
-  return { shopId: targetShopId };
+  return { shopId: targetShopId, displayName };
 }
