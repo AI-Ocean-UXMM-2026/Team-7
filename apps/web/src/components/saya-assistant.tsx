@@ -1,26 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Icon } from "@ocean/ui";
-import { calculateOrderTotals, type OrderDetails } from "@ocean/contracts";
-import { formatMmk } from "@/lib/business/types";
+import type { OrderDetails } from "@ocean/contracts";
 import { saveOrder } from "@/app/sales/actions";
 import { ScreenshotToOrderWorkflow } from "@/app/assistant/screenshot-workflow";
-import { VoucherModal } from "./vouchers-view";
+import { VoucherCard, type VoucherOrder } from "./voucher-card";
+import {
+  buildCustomerReplies,
+  draftTotals,
+  emptyEditableOrder,
+  extractChatOrder,
+  validateEditableOrder,
+  type EditableChatOrder,
+  type FieldSource,
+} from "@/lib/assistant-chat";
 import dolphinAccountant from "../../../../assets/dolphin/dolphin-accountant.png";
 import dolphinLauncher from "../../../../assets/dolphin/dolphin-launcher.png";
 
 type View = "home" | "chat" | "match";
 
-const englishPreset = "Hi! Could I get two Mira tote bags at 22,500 kyat each? Deliver to 14 Inya Road, Yangon. The name is Thiri Mon. Phone 09 777 222 111.";
-const burmesePreset = "မင်္ဂလာပါ။ Mira tote bag နှစ်လုံး၊ တစ်လုံး ၂၂,၅၀၀ ကျပ်။ ရန်ကုန် အင်းလျားလမ်း ၁၄ ကိုပို့ပေးပါ။ နာမည်က သီရိမွန်ပါ။ ဖုန်း ၀၉ ၇၇၇ ၂၂၂ ၁၁၁။";
-
-interface LineItem {
-  id: string;
-  product_name: string;
-  quantity: number;
-  unit_price_mmk: number;
+function SourceTag({ source }: { source: FieldSource }) {
+  const label = source === "extracted" ? "AI" : source === "manual" ? "Edited" : "Required";
+  return <span className={`field-source field-source-${source}`}>{label}</span>;
 }
 
 export function SayaAssistant({
@@ -34,22 +38,38 @@ export function SayaAssistant({
   const [view, setView] = useState<View>("home");
   const [resumeEvidenceId, setResumeEvidenceId] = useState<string | null>(null);
 
-  // Chat to order state
-  const [chatText, setChatText] = useState(englishPreset);
+  // Core Chat to Order state matching desktop assistant
+  const [chat, setChat] = useState("");
+  const [order, setOrder] = useState<EditableChatOrder>(() => emptyEditableOrder());
+  const [hasOrder, setHasOrder] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const orderIdRef = useRef<string | null>(null);
+  const [notice, setNotice] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
-  const [extractedDraft, setExtractedDraft] = useState<{
-    customer_name: string;
-    customer_phone: string;
-    delivery_address: string;
-    notes: string;
-    delivery_fee_mmk: number;
-    discount_mmk: number;
-    items: LineItem[];
-  } | null>(null);
-  const [isSavingOrder, setIsSavingOrder] = useState(false);
-  const [savedOrder, setSavedOrder] = useState<OrderDetails | null>(null);
-  const [showVoucher, setShowVoucher] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [chatInputMode, setChatInputMode] = useState<"paste" | "write">("paste");
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [showAppendWrite, setShowAppendWrite] = useState(false);
+  const [appendInput, setAppendInput] = useState("");
+  const [savedOrder, setSavedOrder] = useState<VoucherOrder | null>(null);
+  const [shopName, setShopName] = useState("တူတူတွက်မယ် Store");
+
+  // Fetch active shop name
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/shop-members?shop=${encodeURIComponent(shopId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.shop_name) {
+          setShopName(data.shop_name);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [shopId]);
 
   // Listen for open events triggered by topbar / banner buttons
   useEffect(() => {
@@ -63,125 +83,315 @@ export function SayaAssistant({
     return () => window.removeEventListener("open-saya-assistant", handleOpen);
   }, []);
 
-  const handleExtractChat = async () => {
-    if (!chatText.trim()) return;
-    setIsExtracting(true);
-    setErrorMessage("");
+  function editTextField(
+    field: "customer_name" | "customer_phone" | "delivery_address" | "notes" | "delivery_fee_mmk" | "discount_mmk",
+    value: string,
+  ) {
+    const sourceField = `${field}_source` as keyof EditableChatOrder;
     setSavedOrder(null);
+    setConfirmed(false);
+    setOrder((current) => ({
+      ...current,
+      [field]: value,
+      [sourceField]: "manual" as const,
+    }));
+  }
 
+  function editItem(
+    index: number,
+    field: "product_name" | "quantity" | "unit_price_mmk",
+    value: string,
+  ) {
+    const sourceField = `${field}_source` as const;
+    setSavedOrder(null);
+    setConfirmed(false);
+    setOrder((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]: value,
+              [sourceField]: "manual" as const,
+            }
+          : item,
+      ),
+    }));
+  }
+
+  function updateQuantity(index: number, delta: number) {
+    setOrder((current) => {
+      const items = [...current.items];
+      const item = items[index];
+      if (!item) return current;
+      const currentQty = Math.max(1, Number(item.quantity) || 1);
+      const newQty = Math.max(1, currentQty + delta);
+      items[index] = {
+        ...item,
+        quantity: String(newQty),
+        quantity_source: "manual",
+      };
+      return { ...current, items };
+    });
+    setSavedOrder(null);
+    setConfirmed(false);
+  }
+
+  function addItem() {
+    setOrder((current) => ({
+      ...current,
+      items: [
+        ...current.items,
+        {
+          key: crypto.randomUUID(),
+          product_name: "",
+          product_name_source: "manual",
+          quantity: "1",
+          quantity_source: "manual",
+          unit_price_mmk: "0",
+          unit_price_mmk_source: "missing",
+        },
+      ],
+    }));
+    setSavedOrder(null);
+    setConfirmed(false);
+  }
+
+  function removeItem(index: number) {
+    setOrder((current) => ({
+      ...current,
+      items: current.items.filter((_, itemIndex) => itemIndex !== index),
+    }));
+    setSavedOrder(null);
+    setConfirmed(false);
+  }
+
+  const generateOrderFromText = useCallback(
+    async (rawText: string) => {
+      const textToAnalyze = rawText.trim();
+      if (!textToAnalyze) {
+        setNotice("Please paste or write customer order details first.");
+        return;
+      }
+
+      setIsExtracting(true);
+      setHasOrder(false);
+      setConfirmed(false);
+      setSavedOrder(null);
+      setNotice("Analyzing order details and generating voucher…");
+
+      const nextOrderId = crypto.randomUUID();
+      orderIdRef.current = nextOrderId;
+      setOrderId(nextOrderId);
+
+      try {
+        const result = await extractChatOrder(textToAnalyze, shopId);
+        setOrder(result.order);
+        setHasOrder(true);
+        setShowEditForm(false);
+        setNotice(result.notice || "✓ Voucher generated! Review or save as PNG.");
+      } catch {
+        setNotice("Could not organize conversation. Check details and try again.");
+      } finally {
+        setIsExtracting(false);
+      }
+    },
+    [shopId],
+  );
+
+  async function handlePasteAndGenerate() {
     try {
-      const res = await fetch("/api/ai/chat-to-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat: chatText, shop_id: shopId }),
-      });
-      const data = await res.json();
-      const ext = data.extraction;
-
-      if (ext) {
-        setExtractedDraft({
-          customer_name: ext.customer_name ?? "Thiri Mon",
-          customer_phone: ext.customer_phone ?? "09 777 222 111",
-          delivery_address: ext.delivery_address ?? "14 Inya Road, Yangon",
-          notes: ext.notes ?? "Standard delivery",
-          delivery_fee_mmk: ext.delivery_fee_mmk ?? 3000,
-          discount_mmk: ext.discount_mmk ?? 0,
-          items: (ext.items && ext.items.length > 0)
-            ? ext.items.map((it: { product_name?: string; quantity?: number; unit_price_mmk?: number }, idx: number) => ({
-                id: `item-${idx}-${Date.now()}`,
-                product_name: it.product_name ?? "Mira Tote Bag",
-                quantity: it.quantity ?? 2,
-                unit_price_mmk: it.unit_price_mmk ?? 22500,
-              }))
-            : [
-                {
-                  id: `item-0-${Date.now()}`,
-                  product_name: "Mira Tote Bag",
-                  quantity: 2,
-                  unit_price_mmk: 22500,
-                },
-              ],
-        });
+      if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+        const clipboardText = await navigator.clipboard.readText();
+        if (clipboardText && clipboardText.trim()) {
+          if (hasOrder) {
+            await appendMessageAndReExtract(clipboardText);
+          } else {
+            setChat(clipboardText);
+            setChatInputMode("paste");
+            await generateOrderFromText(clipboardText);
+          }
+          return;
+        }
       }
     } catch {
-      // Fallback extraction
-      setExtractedDraft({
-        customer_name: "Thiri Mon",
-        customer_phone: "09 777 222 111",
-        delivery_address: "14 Inya Road, Yangon",
-        notes: "Call before delivery",
-        delivery_fee_mmk: 3000,
-        discount_mmk: 0,
-        items: [
-          {
-            id: `item-fallback-${Date.now()}`,
-            product_name: "Mira Tote Bag",
-            quantity: 2,
-            unit_price_mmk: 22500,
-          },
-        ],
+      // Browser clipboard permission denied or not supported
+    }
+
+    // Fallback: switch to write box so user can paste with Ctrl+V
+    setChatInputMode("write");
+    setNotice("Paste your customer chat below, then click Generate Voucher.");
+  }
+
+  async function appendMessageAndReExtract(newText: string) {
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    const combined = chat.trim() ? `${chat.trim()}\n${trimmed}` : trimmed;
+    setChat(combined);
+    setIsExtracting(true);
+    setNotice("Adding new message and updating voucher…");
+    try {
+      const result = await extractChatOrder(combined, shopId);
+      setOrder((prev) => {
+        const extracted = result.order;
+        return {
+          customer_name: extracted.customer_name || prev.customer_name,
+          customer_name_source: extracted.customer_name ? extracted.customer_name_source : prev.customer_name_source,
+          customer_phone: extracted.customer_phone || prev.customer_phone,
+          customer_phone_source: extracted.customer_phone ? extracted.customer_phone_source : prev.customer_phone_source,
+          delivery_address: extracted.delivery_address || prev.delivery_address,
+          delivery_address_source: extracted.delivery_address ? extracted.delivery_address_source : prev.delivery_address_source,
+          notes: extracted.notes || prev.notes,
+          notes_source: extracted.notes ? extracted.notes_source : prev.notes_source,
+          delivery_fee_mmk:
+            extracted.delivery_fee_mmk && extracted.delivery_fee_mmk !== "0"
+              ? extracted.delivery_fee_mmk
+              : prev.delivery_fee_mmk,
+          delivery_fee_mmk_source:
+            extracted.delivery_fee_mmk && extracted.delivery_fee_mmk !== "0"
+              ? extracted.delivery_fee_mmk_source
+              : prev.delivery_fee_mmk_source,
+          discount_mmk:
+            extracted.discount_mmk && extracted.discount_mmk !== "0" ? extracted.discount_mmk : prev.discount_mmk,
+          discount_mmk_source:
+            extracted.discount_mmk && extracted.discount_mmk !== "0" ? extracted.discount_mmk_source : prev.discount_mmk_source,
+          items:
+            extracted.items.length > 0 && extracted.items.some((i) => i.product_name)
+              ? extracted.items
+              : prev.items,
+        };
       });
+      setSavedOrder(null);
+      setConfirmed(false);
+      setHasOrder(true);
+      setNotice("✓ New message added! Voucher updated.");
+    } catch {
+      setNotice("Could not parse new message. You can also edit details directly.");
     } finally {
       setIsExtracting(false);
     }
-  };
+  }
 
-  const handleSaveOrder = async () => {
-    if (!extractedDraft) return;
-    setIsSavingOrder(true);
-    setErrorMessage("");
+  async function handleAppendFromClipboard() {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+        const clipboardText = await navigator.clipboard.readText();
+        if (clipboardText && clipboardText.trim()) {
+          await appendMessageAndReExtract(clipboardText);
+          return;
+        }
+      }
+    } catch {}
+    setShowAppendWrite(true);
+    setNotice("Type or paste the additional details in the box below.");
+  }
+
+  async function confirmOrder() {
+    if (confirmed) {
+      setNotice("This order is already saved to your shop.");
+      return;
+    }
+    const errors = validateEditableOrder(order);
+    if (errors.length > 0) {
+      setConfirmed(false);
+      setShowEditForm(true);
+      setNotice("Please complete required order fields before saving.");
+      return;
+    }
+
+    const stableOrderId = orderIdRef.current || crypto.randomUUID();
+    orderIdRef.current = stableOrderId;
+    setOrderId(stableOrderId);
+    setIsSaving(true);
+    setNotice("Saving order to shop workspace…");
 
     try {
-      const newOrderId = crypto.randomUUID();
       const payload = {
         shop_id: shopId,
-        id: newOrderId,
+        id: stableOrderId,
         expected_updated_at: null,
-        customer_name: extractedDraft.customer_name,
-        customer_phone: extractedDraft.customer_phone,
-        delivery_address: extractedDraft.delivery_address,
-        notes: extractedDraft.notes,
+        customer_name: order.customer_name.trim(),
+        customer_phone: order.customer_phone.trim() || null,
+        delivery_address: order.delivery_address.trim() || null,
+        notes: order.notes.trim() || null,
         order_status: "confirmed" as const,
         fulfillment_status: "unfulfilled" as const,
-        delivery_fee_mmk: extractedDraft.delivery_fee_mmk,
-        discount_mmk: extractedDraft.discount_mmk,
-        items: extractedDraft.items.map((i) => ({
-          product_name: i.product_name,
-          quantity: i.quantity,
-          unit_price_mmk: i.unit_price_mmk,
+        delivery_fee_mmk: Number(order.delivery_fee_mmk) || 0,
+        discount_mmk: Number(order.discount_mmk) || 0,
+        items: order.items.map((it) => ({
+          product_name: it.product_name.trim(),
+          quantity: Number(it.quantity) || 1,
+          unit_price_mmk: Number(it.unit_price_mmk) || 0,
         })),
       };
 
       const result = await saveOrder(payload);
       if (result.error) {
-        setErrorMessage(result.error);
+        setNotice(result.error);
       } else if (result.order) {
-        setSavedOrder(result.order);
+        setSavedOrder(result.order as unknown as VoucherOrder);
+        setConfirmed(true);
+        setNotice(`✓ Order saved to ${shopName}! It now appears on your Sales page.`);
         if (onOrderSaved) onOrderSaved(result.order);
-        // Refresh orders if on sales page
         window.dispatchEvent(new CustomEvent("refresh-orders"));
       }
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Failed to save order.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Failed to save order.");
     } finally {
-      setIsSavingOrder(false);
+      setIsSaving(false);
     }
-  };
+  }
 
-  // Draft calculations
-  const totals = extractedDraft
-    ? calculateOrderTotals(
-        extractedDraft.items.map((i) => ({ quantity: i.quantity, unit_price_mmk: i.unit_price_mmk })),
-        extractedDraft.delivery_fee_mmk,
-        extractedDraft.discount_mmk
-      )
-    : { subtotal_mmk: 0, delivery_fee_mmk: 0, discount_mmk: 0, total_mmk: 0 };
+  const totals = draftTotals(order);
+  const validationErrors = hasOrder ? validateEditableOrder(order) : [];
+  const customerReplies = buildCustomerReplies(validationErrors, {
+    customerName: order.customer_name,
+    itemsSummary: order.items
+      .filter((it) => it.product_name)
+      .map((it) => `${it.product_name} (${it.quantity || 1})`)
+      .join(", "),
+    totalMmk: totals.total_mmk,
+    deliveryAddress: order.delivery_address,
+    phone: order.customer_phone,
+  });
+
+  const isBurmese = /[\u1000-\u109F]/u.test(
+    `${chat} ${order.customer_name} ${order.delivery_address} ${order.items.map((it) => it.product_name).join(" ")}`,
+  );
+  const singleLanguageReply = isBurmese ? customerReplies.my : customerReplies.en;
+
+  const currentVoucherOrder: VoucherOrder = useMemo(
+    () => ({
+      id: orderId || "draft",
+      created_at: new Date().toISOString(),
+      order_status: confirmed ? "confirmed" : "draft",
+      subtotal_mmk: totals.subtotal_mmk ?? 0,
+      delivery_fee_mmk: Number(order.delivery_fee_mmk) || 0,
+      discount_mmk: Number(order.discount_mmk) || 0,
+      total_mmk: totals.total_mmk ?? 0,
+      delivery_address: order.delivery_address || null,
+      notes: order.notes || null,
+      customers: {
+        name: order.customer_name || "Customer",
+        phone: order.customer_phone || null,
+      },
+      order_items: order.items.map((it, idx) => ({
+        id: it.key || String(idx),
+        product_name: it.product_name || "Product",
+        quantity: Math.max(1, Number(it.quantity) || 1),
+        unit_price_mmk: Math.max(0, Number(it.unit_price_mmk) || 0),
+        line_total_mmk: Math.max(1, Number(it.quantity) || 1) * Math.max(0, Number(it.unit_price_mmk) || 0),
+      })),
+    }),
+    [orderId, confirmed, totals, order],
+  );
 
   return (
     <>
       {/* Floating launcher when minimized */}
       {!isOpen && (
         <button
+          type="button"
           className="saya-floating-launcher"
           onClick={() => setIsOpen(true)}
           aria-label="Open Saya AI Assistant"
@@ -198,403 +408,557 @@ export function SayaAssistant({
         </button>
       )}
 
-      {/* Docked Assistant Panel */}
+      {/* Docked Assistant Panel identical to Electron desktop assistant */}
       {isOpen && (
-        <aside className="saya-docked-panel" aria-label="Saya AI Assistant">
-          {/* Header */}
-          <div className="saya-header">
-            <div className="saya-header-left">
-              <button
-                className="saya-icon-button"
-                onClick={() => setIsOpen(false)}
-                aria-label="Minimize Saya Assistant"
-                title="Minimize"
-              >
-                <span style={{ fontSize: "18px", fontWeight: "bold" }}>–</span>
-              </button>
-              <div className="saya-title-wrap">
-                <span className="saya-title">Saya Assistant</span>
-                <span className="saya-status-dot">
-                  <span className="dot" /> Assistant ready
-                </span>
-              </div>
+        <aside className="saya-docked-panel assistant-shell" aria-label="Saya AI Assistant">
+          {/* Header with Mini Home Icon leading directly to Dashboard */}
+          <header className="panel-header">
+            <div className="header-drag" aria-hidden="true">
+              <span className="panel-mark">
+                <Image src={dolphinAccountant} alt="" width={34} height={34} priority />
+              </span>
+              <span className="title-copy">
+                <strong>တူတူတွက်မယ်</strong>
+                <small>YOUR SELLER ASSISTANT</small>
+              </span>
             </div>
-            <button
-              className="saya-icon-button"
-              onClick={() => setIsOpen(false)}
-              aria-label="Close Assistant"
-              title="Close"
-            >
-              <span style={{ fontSize: "18px" }}>×</span>
-            </button>
-          </div>
+            <div className="window-actions">
+              <Link
+                href={shopId ? `/?shop=${encodeURIComponent(shopId)}` : "/"}
+                className="header-home-btn"
+                title="Open Dashboard"
+                aria-label="Open Dashboard"
+              >
+                <Icon name="home" size={15} />
+              </Link>
+              <button
+                type="button"
+                className="window-action"
+                aria-label="Minimize"
+                title="Minimize"
+                onClick={() => setIsOpen(false)}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className="window-action close-action"
+                aria-label="Close"
+                title="Close"
+                onClick={() => setIsOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+          </header>
 
-          {/* Body Content by View */}
-          <div className="saya-body">
-            {view === "home" && (
-              <div className="saya-home-view">
-                <div className="saya-assistant-context">
-                  <span className="eyebrow">SELLER OPERATIONS</span>
-                  <h2>Operations Assistant</h2>
-                  <p className="muted">
-                    Quickly convert customer conversations into structured orders or match payment slips to pending orders.
-                  </p>
-                </div>
+          {/* Scrollable Body */}
+          <div className="panel-scroll">
+            {view === "home" ? (
+              <>
+                {/* Mobbin-inspired Clean Hero */}
+                <section className="home-hero">
+                  <div className="dolphin-avatar">
+                    <span className="welcome-ripple" />
+                    <Image src={dolphinAccountant} alt="တူတူတွက်မယ်" width={86} height={86} priority />
+                  </div>
+                  <h1 className="home-title">တူတူတွက်မယ်</h1>
+                  <p className="home-subtitle">Your Seller Assistant</p>
+                </section>
 
-                {/* Main Actions */}
-                <div className="saya-action-cards">
+                {/* Two Clean Action Cards */}
+                <div className="clean-actions-list">
                   <button
-                    className="saya-action-card card-chat"
+                    type="button"
+                    className="clean-action-card"
                     onClick={() => {
                       setView("chat");
-                      setSavedOrder(null);
-                      setErrorMessage("");
+                      setNotice("");
                     }}
                   >
-                    <div className="saya-card-icon-wrap icon-blue">
-                      <Icon name="orders" size={24} />
+                    <div className="clean-action-icon chat-blue">
+                      <Icon name="sales" size={24} />
                     </div>
-                    <div className="saya-card-content">
-                      <h3>Chat to Order</h3>
-                      <p>Paste a customer chat and turn it into an editable order.</p>
-                      <span className="saya-action-link">Start extracting →</span>
+                    <div className="clean-action-text">
+                      <strong>Chat to Order</strong>
+                      <span>Turn customer messages into instant vouchers</span>
                     </div>
+                    <span className="action-arrow">→</span>
                   </button>
 
                   <button
-                    className="saya-action-card card-screenshot"
+                    type="button"
+                    className="clean-action-card"
                     onClick={() => {
                       setView("match");
                       setResumeEvidenceId(null);
-                      setErrorMessage("");
+                      setNotice("");
                     }}
                   >
-                    <div className="saya-card-icon-wrap icon-green">
+                    <div className="clean-action-icon match-green">
                       <Icon name="wallet" size={24} />
                     </div>
-                    <div className="saya-card-content">
-                      <h3>Screenshot to Order Match</h3>
-                      <p>Review transaction details and find a possible order.</p>
-                      <span className="saya-action-link">Upload screenshot →</span>
+                    <div className="clean-action-text">
+                      <strong>Match Payment to Order</strong>
+                      <span>Verify transaction slip & connect order</span>
                     </div>
+                    <span className="action-arrow">→</span>
                   </button>
                 </div>
 
-                <p className="saya-privacy-note">
-                  Your data stays private and is only used to help with this task.
-                </p>
-              </div>
-            )}
-
-            {/* CHAT TO ORDER VIEW */}
-            {view === "chat" && (
-              <div className="saya-workflow-view">
-                <div className="saya-view-nav">
-                  <button className="saya-back-btn" onClick={() => setView("home")}>
-                    ← Back
-                  </button>
-                  <h3>Chat to Order</h3>
-                </div>
-
-                {savedOrder ? (
-                  <div className="saya-success-card">
-                    <Image src={dolphinAccountant} alt="" width={80} height={80} />
-                    <h4>Order Saved Successfully!</h4>
-                    <p className="order-tag">Order #{savedOrder.id.slice(0, 8).toUpperCase()}</p>
-                    <p className="muted">
-                      Customer: <strong>{savedOrder.customers?.name ?? "Customer"}</strong>
-                      <br />
-                      Total: <strong>{formatMmk(savedOrder.total_mmk)} MMK</strong>
-                    </p>
-                    <div className="saya-success-actions">
-                      <button className="auth-submit" onClick={() => setShowVoucher(true)}>
-                        View Voucher
-                      </button>
-                      <button
-                        className="auth-secondary"
-                        onClick={() => {
-                          setSavedOrder(null);
-                          setExtractedDraft(null);
-                          setChatText("");
-                        }}
-                      >
-                        + New Draft
-                      </button>
-                    </div>
+                {/* Web Active Shop Bar (Clean, no external reconnect hoops) */}
+                <div className="web-active-shop-bar">
+                  <div className="web-active-shop-info">
+                    <span className="dot" />
+                    <span>
+                      Active Shop: <strong>{shopName}</strong>
+                    </span>
                   </div>
-                ) : (
-                  <>
-                    <div className="saya-chat-input-section">
-                      <label htmlFor="saya-chat-area" className="saya-label">
-                        Paste Messenger or TikTok conversation
-                      </label>
-                      <textarea
-                        id="saya-chat-area"
-                        className="saya-textarea"
-                        rows={4}
-                        value={chatText}
-                        onChange={(e) => setChatText(e.target.value)}
-                        placeholder="Paste customer conversation here..."
-                      />
+                  <div className="web-active-shop-links">
+                    <Link
+                      href={shopId ? `/?shop=${encodeURIComponent(shopId)}` : "/"}
+                      className="web-lead-btn"
+                      title="Go to Dashboard"
+                    >
+                      Dashboard ↗
+                    </Link>
+                    <Link
+                      href={shopId ? `/sales?shop=${encodeURIComponent(shopId)}` : "/sales"}
+                      className="web-lead-btn"
+                      title="Go to Sales"
+                    >
+                      Sales ↗
+                    </Link>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* View Top Bar with Back and Direct Dashboard Links */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <button
+                    type="button"
+                    className="back-link"
+                    style={{ margin: 0, background: "none", border: "none", cursor: "pointer" }}
+                    onClick={() => {
+                      setView("home");
+                      setNotice("");
+                    }}
+                  >
+                    <span aria-hidden="true">←</span> Back to home
+                  </button>
+                  <Link
+                    href={shopId ? `/?shop=${encodeURIComponent(shopId)}` : "/"}
+                    className="header-home-btn"
+                    title="Open Dashboard"
+                    style={{ textDecoration: "none" }}
+                  >
+                    <Icon name="home" size={14} /> Dashboard ↗
+                  </Link>
+                </div>
 
-                      <div className="saya-preset-chips">
-                        <span className="muted" style={{ fontSize: "0.75rem" }}>
-                          Try example:
-                        </span>
-                        <button
-                          type="button"
-                          className="saya-chip"
-                          onClick={() => setChatText(englishPreset)}
-                        >
-                          English Chat
-                        </button>
-                        <button
-                          type="button"
-                          className="saya-chip"
-                          onClick={() => setChatText(burmesePreset)}
-                        >
-                          မြန်မာ Chat
-                        </button>
-                      </div>
-
+                {view === "chat" ? (
+                  <section className="workflow" aria-label="Chat to Order">
+                    {/* Mode Tabs: Paste from clipboard vs Write order */}
+                    <div className="chat-mode-tabs">
                       <button
                         type="button"
-                        className="auth-submit saya-extract-btn"
-                        onClick={handleExtractChat}
-                        disabled={isExtracting || !chatText.trim()}
+                        className={`mode-tab-btn ${chatInputMode === "paste" ? "active" : ""}`}
+                        onClick={() => {
+                          setChatInputMode("paste");
+                          void handlePasteAndGenerate();
+                        }}
                       >
-                        {isExtracting ? "Reviewing conversation…" : "Extract order with AI"}
+                        📋 Paste from clipboard
+                      </button>
+                      <button
+                        type="button"
+                        className={`mode-tab-btn ${chatInputMode === "write" ? "active" : ""}`}
+                        onClick={() => setChatInputMode("write")}
+                      >
+                        ✏️ Write order
                       </button>
                     </div>
 
-                    {errorMessage && <p className="business-note" style={{ color: "#e96565" }}>{errorMessage}</p>}
-
-                    {/* Extracted draft order */}
-                    {extractedDraft && (
-                      <div className="saya-draft-card">
-                        <div className="saya-draft-header">
-                          <h4>Review & Confirm Order</h4>
-                          <span className="status-badge status-info">Draft</span>
-                        </div>
-
-                        {/* Customer Info */}
-                        <div className="saya-fields-group">
-                          <label>
-                            Customer Name
-                            <input
-                              type="text"
-                              value={extractedDraft.customer_name}
-                              onChange={(e) =>
-                                setExtractedDraft({ ...extractedDraft, customer_name: e.target.value })
-                              }
-                            />
-                          </label>
-                          <label>
-                            Phone Number
-                            <input
-                              type="text"
-                              value={extractedDraft.customer_phone}
-                              onChange={(e) =>
-                                setExtractedDraft({ ...extractedDraft, customer_phone: e.target.value })
-                              }
-                            />
-                          </label>
-                          <label>
-                            Delivery Address
-                            <input
-                              type="text"
-                              value={extractedDraft.delivery_address}
-                              onChange={(e) =>
-                                setExtractedDraft({ ...extractedDraft, delivery_address: e.target.value })
-                              }
-                            />
-                          </label>
-                          <label>
-                            Notes / Instructions
-                            <input
-                              type="text"
-                              value={extractedDraft.notes}
-                              placeholder="e.g. Call before delivery"
-                              onChange={(e) =>
-                                setExtractedDraft({ ...extractedDraft, notes: e.target.value })
-                              }
-                            />
-                          </label>
-                        </div>
-
-                        {/* Line Items */}
-                        <div className="saya-items-section">
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                            <span className="eyebrow">ORDER ITEMS</span>
+                    {/* Top Write Box: Direct input to compose or update */}
+                    {chatInputMode === "write" && (
+                      <div className="top-write-container">
+                        <textarea
+                          id="web-customer-chat"
+                          className="chat-input"
+                          value={chat}
+                          maxLength={20_000}
+                          rows={hasOrder ? 3 : 4}
+                          onChange={(e) => setChat(e.target.value)}
+                          placeholder={
+                            hasOrder
+                              ? "Type new message or additional details (e.g. Daw Aye Aye, 09777222111, Kamayut)…"
+                              : "Type customer conversation or order details (e.g. Daw Aye Aye, 09777222111, Kamayut, Lipstick 2 pcs 25000 kyat)…"
+                          }
+                        />
+                        <div style={{ marginTop: "6px", display: "flex", gap: "8px" }}>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            style={{ flex: 1 }}
+                            disabled={isExtracting || !chat.trim()}
+                            onClick={() => void generateOrderFromText(chat)}
+                          >
+                            {isExtracting
+                              ? "Generating voucher…"
+                              : hasOrder
+                              ? "Update Voucher with New Message"
+                              : "Generate Voucher"}
+                          </button>
+                          {hasOrder && (
                             <button
                               type="button"
-                              className="text-button"
-                              style={{ fontSize: "0.75rem" }}
+                              className="secondary-button"
+                              title="Clear and start new voucher"
                               onClick={() => {
-                                setExtractedDraft({
-                                  ...extractedDraft,
-                                  items: [
-                                    ...extractedDraft.items,
-                                    {
-                                      id: `item-${Date.now()}`,
-                                      product_name: "New Product",
-                                      quantity: 1,
-                                      unit_price_mmk: 10000,
-                                    },
-                                  ],
-                                });
+                                setChat("");
+                                setHasOrder(false);
+                                setConfirmed(false);
+                                setSavedOrder(null);
+                                setOrder(emptyEditableOrder());
                               }}
                             >
-                              + Add product
+                              + New
                             </button>
-                          </div>
-                          {extractedDraft.items.map((item, idx) => (
-                            <div key={item.id} className="saya-item-row">
-                              <input
-                                type="text"
-                                style={{ flex: 2 }}
-                                aria-label={`Product name ${idx + 1}`}
-                                value={item.product_name}
-                                onChange={(e) => {
-                                  const updated = [...extractedDraft.items];
-                                  updated[idx]!.product_name = e.target.value;
-                                  setExtractedDraft({ ...extractedDraft, items: updated });
-                                }}
-                              />
-                              <div className="qty-control">
-                                <button
-                                  type="button"
-                                  aria-label="Decrease quantity"
-                                  onClick={() => {
-                                    if (item.quantity > 1) {
-                                      const updated = [...extractedDraft.items];
-                                      updated[idx]!.quantity = item.quantity - 1;
-                                      setExtractedDraft({ ...extractedDraft, items: updated });
-                                    }
-                                  }}
-                                >
-                                  -
-                                </button>
-                                <span>{item.quantity}</span>
-                                <button
-                                  type="button"
-                                  aria-label="Increase quantity"
-                                  onClick={() => {
-                                    const updated = [...extractedDraft.items];
-                                    updated[idx]!.quantity = item.quantity + 1;
-                                    setExtractedDraft({ ...extractedDraft, items: updated });
-                                  }}
-                                >
-                                  +
-                                </button>
-                              </div>
-                              <input
-                                type="number"
-                                aria-label={`Unit price ${idx + 1}`}
-                                style={{ width: "90px", textAlign: "right" }}
-                                value={item.unit_price_mmk}
-                                onChange={(e) => {
-                                  const updated = [...extractedDraft.items];
-                                  updated[idx]!.unit_price_mmk = Number(e.target.value) || 0;
-                                  setExtractedDraft({ ...extractedDraft, items: updated });
-                                }}
-                              />
-                              {extractedDraft.items.length > 1 && (
-                                <button
-                                  type="button"
-                                  className="text-button"
-                                  aria-label={`Remove ${item.product_name}`}
-                                  style={{ color: "#e96565", fontSize: "0.8rem", padding: "0 4px" }}
-                                  onClick={() => {
-                                    setExtractedDraft({
-                                      ...extractedDraft,
-                                      items: extractedDraft.items.filter((_, n) => n !== idx),
-                                    });
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                          )}
                         </div>
-
-                        {/* Totals Summary */}
-                        <div className="saya-totals-summary">
-                          <div>
-                            <span>Subtotal:</span>
-                            <span>{formatMmk(totals.subtotal_mmk)} MMK</span>
-                          </div>
-                          <div>
-                            <span>Delivery Fee:</span>
-                            <input
-                              type="number"
-                              min="0"
-                              style={{ width: "80px", textAlign: "right", padding: "3px 6px" }}
-                              value={extractedDraft.delivery_fee_mmk}
-                              onChange={(e) =>
-                                setExtractedDraft({
-                                  ...extractedDraft,
-                                  delivery_fee_mmk: Number(e.target.value) || 0,
-                                })
-                              }
-                            />
-                          </div>
-                          <div>
-                            <span>Discount:</span>
-                            <input
-                              type="number"
-                              min="0"
-                              style={{ width: "80px", textAlign: "right", padding: "3px 6px" }}
-                              value={extractedDraft.discount_mmk}
-                              onChange={(e) =>
-                                setExtractedDraft({
-                                  ...extractedDraft,
-                                  discount_mmk: Math.max(0, Number(e.target.value) || 0),
-                                })
-                              }
-                            />
-                          </div>
-                          <div className="grand-total-row">
-                            <strong>Total MMK:</strong>
-                            <strong>{formatMmk(totals.total_mmk)} MMK</strong>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="auth-submit saya-save-btn"
-                          onClick={handleSaveOrder}
-                          disabled={isSavingOrder}
-                        >
-                          {isSavingOrder ? "Saving order…" : "Approve & Save Order"}
-                        </button>
                       </div>
                     )}
-                  </>
-                )}
-              </div>
-            )}
 
-            {/* SCREENSHOT TO ORDER MATCH VIEW */}
-            {view === "match" && (
-              <div className="saya-workflow-view">
-                <div className="saya-view-nav">
-                  <button className="saya-back-btn" onClick={() => setView("home")}>
-                    ← Back
-                  </button>
-                  <h3>Screenshot to Order Match</h3>
-                </div>
-                <ScreenshotToOrderWorkflow key={resumeEvidenceId ?? "new-review"} shopId={shopId} resumeEvidenceId={resumeEvidenceId} />
-              </div>
+                    {/* Default Paste Mode Card */}
+                    {!hasOrder && chatInputMode === "paste" && (
+                      <div className="paste-mode-container">
+                        <div
+                          className="paste-mode-card"
+                          onClick={() => void handlePasteAndGenerate()}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              void handlePasteAndGenerate();
+                            }
+                          }}
+                        >
+                          <div className="paste-card-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                            </svg>
+                          </div>
+                          <strong className="paste-card-title">Paste Customer Order</strong>
+                          <p className="paste-card-desc">
+                            Copy customer chat from Facebook or TikTok, then click here to generate voucher.
+                          </p>
+                          <button
+                            type="button"
+                            className="primary-button paste-action-btn"
+                            disabled={isExtracting}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handlePasteAndGenerate();
+                            }}
+                          >
+                            {isExtracting ? "Analyzing & Generating Voucher…" : "📋 Paste & Generate Voucher"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Direct Voucher View without scrolling review forms */}
+                    {hasOrder && (
+                      <>
+                        <VoucherCard
+                          order={savedOrder || currentVoucherOrder}
+                          shopName={shopName}
+                          sourceText={chat}
+                          isEditing={showEditForm}
+                          onEdit={() => setShowEditForm(!showEditForm)}
+                          onSaveToShop={confirmOrder}
+                          isSavingToShop={isSaving}
+                          isSavedToShop={confirmed}
+                        >
+                          {/* Collapsible Edit Form directly below toolbar */}
+                          {showEditForm && (
+                            <div className="voucher-edit-drawer no-print">
+                              <div className="voucher-edit-header">
+                                <h4>Edit Order Details (အချက်အလက် ပြင်ဆင်ရန်)</h4>
+                                <button
+                                  type="button"
+                                  className="voucher-edit-done-btn"
+                                  onClick={() => setShowEditForm(false)}
+                                >
+                                  ✓ Done
+                                </button>
+                              </div>
+                              <div className="field-grid">
+                                <label className="form-field">
+                                  <span className="field-label-row">
+                                    Customer name <SourceTag source={order.customer_name_source} />
+                                  </span>
+                                  <input
+                                    autoComplete="off"
+                                    value={order.customer_name}
+                                    onChange={(e) => editTextField("customer_name", e.target.value)}
+                                  />
+                                </label>
+                                <label className="form-field">
+                                  <span className="field-label-row">
+                                    Phone <SourceTag source={order.customer_phone_source} />
+                                  </span>
+                                  <input
+                                    autoComplete="off"
+                                    value={order.customer_phone}
+                                    onChange={(e) => editTextField("customer_phone", e.target.value)}
+                                  />
+                                </label>
+                                <label className="form-field field-wide">
+                                  <span className="field-label-row">
+                                    Delivery address <SourceTag source={order.delivery_address_source} />
+                                  </span>
+                                  <textarea
+                                    value={order.delivery_address}
+                                    onChange={(e) => editTextField("delivery_address", e.target.value)}
+                                    rows={2}
+                                  />
+                                </label>
+                                <label className="form-field field-wide">
+                                  <span className="field-label-row">
+                                    Notes <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>(Optional)</span>
+                                  </span>
+                                  <input
+                                    value={order.notes}
+                                    onChange={(e) => editTextField("notes", e.target.value)}
+                                    placeholder="Delivery instructions or buyer notes"
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="items-heading" style={{ marginTop: "4px" }}>
+                                <strong>Products ({order.items.length})</strong>
+                                <button type="button" className="text-button" onClick={addItem}>
+                                  + Add product
+                                </button>
+                              </div>
+                              <div className="items-list">
+                                {order.items.map((item, index) => (
+                                  <div className="item-row" key={item.key}>
+                                    <div className="item-main">
+                                      <input
+                                        className="item-name-input"
+                                        placeholder="Product name"
+                                        value={item.product_name}
+                                        onChange={(e) => editItem(index, "product_name", e.target.value)}
+                                      />
+                                      {order.items.length > 1 && (
+                                        <button
+                                          type="button"
+                                          className="item-delete-btn"
+                                          title="Remove item"
+                                          onClick={() => removeItem(index)}
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="item-metrics">
+                                      <div className="qty-control">
+                                        <button
+                                          type="button"
+                                          aria-label="Decrease quantity"
+                                          onClick={() => updateQuantity(index, -1)}
+                                        >
+                                          −
+                                        </button>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          className="qty-input"
+                                          value={item.quantity}
+                                          onChange={(e) => editItem(index, "quantity", e.target.value)}
+                                        />
+                                        <button
+                                          type="button"
+                                          aria-label="Increase quantity"
+                                          onClick={() => updateQuantity(index, 1)}
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                      <div className="price-input-wrapper">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          className="price-input"
+                                          placeholder="Price"
+                                          value={item.unit_price_mmk}
+                                          onChange={(e) => editItem(index, "unit_price_mmk", e.target.value)}
+                                        />
+                                        <span className="price-unit">MMK</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="field-grid" style={{ marginTop: "6px" }}>
+                                <label className="form-field">
+                                  <span className="field-label-row">
+                                    Delivery fee (MMK) <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>(Optional)</span>
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={order.delivery_fee_mmk}
+                                    onChange={(e) => editTextField("delivery_fee_mmk", e.target.value)}
+                                  />
+                                </label>
+                                <label className="form-field">
+                                  <span className="field-label-row">
+                                    Discount (MMK) <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>(Optional)</span>
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={order.discount_mmk}
+                                    onChange={(e) => editTextField("discount_mmk", e.target.value)}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Quick Append Message Bar */}
+                          <div className="voucher-append-bar no-print">
+                            <div className="voucher-append-actions">
+                              <span style={{ fontSize: "0.72rem", color: "#1e3a8a", fontWeight: 650 }}>
+                                Missing details? Add message:
+                              </span>
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button
+                                  type="button"
+                                  className="append-paste-btn"
+                                  onClick={() => void handleAppendFromClipboard()}
+                                  title="Paste new message from customer"
+                                >
+                                  📋 Paste new
+                                </button>
+                                <button
+                                  type="button"
+                                  className="append-write-toggle-btn"
+                                  onClick={() => setShowAppendWrite(!showAppendWrite)}
+                                >
+                                  ✏️ Write
+                                </button>
+                              </div>
+                            </div>
+                            {showAppendWrite && (
+                              <div className="append-input-box">
+                                <textarea
+                                  className="append-textarea"
+                                  rows={2}
+                                  value={appendInput}
+                                  onChange={(e) => setAppendInput(e.target.value)}
+                                  placeholder="Type customer reply or missing info (e.g. Daw Mya, 09444333222, Hledan)…"
+                                />
+                                <button
+                                  type="button"
+                                  className="primary-button append-submit-btn"
+                                  disabled={isExtracting || !appendInput.trim()}
+                                  onClick={async () => {
+                                    await appendMessageAndReExtract(appendInput);
+                                    setAppendInput("");
+                                    setShowAppendWrite(false);
+                                  }}
+                                >
+                                  Update Voucher
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Single Language Customer Reply Box */}
+                          <div className="customer-reply-section no-print">
+                            <div className="customer-reply-title">
+                              <span>Customer Reply ({isBurmese ? "မြန်မာစာဖြင့် အကြောင်းပြန်ရန်" : "English Reply"})</span>
+                              <button
+                                type="button"
+                                className="copy-reply-btn"
+                                onClick={() => {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                                    navigator.clipboard.writeText(singleLanguageReply);
+                                    setNotice("✓ Customer reply copied to clipboard!");
+                                  }
+                                }}
+                              >
+                                📋 Copy Reply
+                              </button>
+                            </div>
+                            <div className="reply-item-box">
+                              <textarea
+                                className="reply-textarea"
+                                rows={3}
+                                readOnly
+                                value={singleLanguageReply}
+                              />
+                            </div>
+                          </div>
+                        </VoucherCard>
+
+                        {/* Order Saved Success Bar with direct link leading to Dashboard and Sales */}
+                        {confirmed && (
+                          <div className="web-saved-success-bar no-print">
+                            <strong>✓ Order saved to {shopName}! It now appears on your Sales page.</strong>
+                            <div className="web-saved-actions">
+                              <Link
+                                href={`/sales?shop=${encodeURIComponent(shopId)}&order=${savedOrder?.id || orderId}`}
+                                className="web-lead-btn primary"
+                              >
+                                View in Sales Management ↗
+                              </Link>
+                              <Link
+                                href={`/?shop=${encodeURIComponent(shopId)}`}
+                                className="web-lead-btn"
+                              >
+                                Go to Dashboard ↗
+                              </Link>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </section>
+                ) : (
+                  /* SCREENSHOT TO ORDER MATCH VIEW */
+                  <section className="workflow" aria-label="Match Payment to Order">
+                    <ScreenshotToOrderWorkflow
+                      key={resumeEvidenceId ?? "web-match"}
+                      shopId={shopId}
+                      resumeEvidenceId={resumeEvidenceId}
+                    />
+                  </section>
+                )}
+              </>
             )}
           </div>
-        </aside>
-      )}
 
-      {/* Full Voucher Modal */}
-      {showVoucher && savedOrder && (
-        <VoucherModal order={savedOrder} onClose={() => setShowVoucher(false)} />
+          {/* Bottom Notice Notification */}
+          {notice && (
+            <div className="assistant-notice-bar" role="status">
+              <span>{notice}</span>
+              <button type="button" className="notice-dismiss" onClick={() => setNotice("")}>
+                ×
+              </button>
+            </div>
+          )}
+        </aside>
       )}
     </>
   );
