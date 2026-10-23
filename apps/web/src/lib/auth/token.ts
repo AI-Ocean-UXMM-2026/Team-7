@@ -170,22 +170,24 @@ export function getUserAuthorizedShops(userId: string): Array<{
   const db = getDb();
   try {
     let rows = db.prepare(`
-      SELECT sm.shop_id, s.name as shop_name, sm.role, s.currency, s.is_sample
+      SELECT sm.shop_id, s.name as shop_name, sm.role, s.currency, s.is_sample,
+             (SELECT COUNT(*) FROM orders o WHERE o.shop_id = s.id) as order_count
       FROM shop_memberships sm
       JOIN shops s ON sm.shop_id = s.id
       WHERE sm.user_id = ?
-      ORDER BY s.is_sample ASC, sm.created_at DESC
+      ORDER BY s.is_sample ASC, order_count DESC, sm.created_at ASC
     `).all(userId) as Array<{ shop_id: string; shop_name: string; role: string; currency: string; is_sample: number }>;
 
     // Self-heal on serverless cold starts: if no shops found, provision primary store
     if (rows.length === 0) {
       ensureLocalProfile({ id: userId });
       rows = db.prepare(`
-        SELECT sm.shop_id, s.name as shop_name, sm.role, s.currency, s.is_sample
+        SELECT sm.shop_id, s.name as shop_name, sm.role, s.currency, s.is_sample,
+               (SELECT COUNT(*) FROM orders o WHERE o.shop_id = s.id) as order_count
         FROM shop_memberships sm
         JOIN shops s ON sm.shop_id = s.id
         WHERE sm.user_id = ?
-        ORDER BY s.is_sample ASC, sm.created_at DESC
+        ORDER BY s.is_sample ASC, order_count DESC, sm.created_at ASC
       `).all(userId) as Array<{ shop_id: string; shop_name: string; role: string; currency: string; is_sample: number }>;
     }
 

@@ -476,9 +476,29 @@ function TopNavigationItems({
   shop?: string;
   language: ShellLanguage;
 }) {
+  const [activeShop, setActiveShop] = useState(shop);
+
+  useEffect(() => {
+    if (shop) {
+      setActiveShop(shop);
+      try {
+        localStorage.setItem("salesayar_active_shop", shop);
+        document.cookie = `salesayar_active_shop=${encodeURIComponent(shop)}; path=/; max-age=2592000; SameSite=Lax`;
+      } catch {}
+    } else {
+      try {
+        const stored = localStorage.getItem("salesayar_active_shop");
+        if (stored && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stored)) {
+          setActiveShop(stored);
+        }
+      } catch {}
+    }
+  }, [shop]);
+
   const labels = shellLabels(language);
-  const query = shop && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shop)
-    ? `?shop=${encodeURIComponent(shop)}`
+  const effectiveShop = shop || activeShop;
+  const query = effectiveShop && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveShop)
+    ? `?shop=${encodeURIComponent(effectiveShop)}`
     : "";
 
   return (
@@ -521,9 +541,29 @@ function NavigationItems({
   shop?: string;
   language: ShellLanguage;
 }) {
+  const [activeShop, setActiveShop] = useState(shop);
+
+  useEffect(() => {
+    if (shop) {
+      setActiveShop(shop);
+      try {
+        localStorage.setItem("salesayar_active_shop", shop);
+        document.cookie = `salesayar_active_shop=${encodeURIComponent(shop)}; path=/; max-age=2592000; SameSite=Lax`;
+      } catch {}
+    } else {
+      try {
+        const stored = localStorage.getItem("salesayar_active_shop");
+        if (stored && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stored)) {
+          setActiveShop(stored);
+        }
+      } catch {}
+    }
+  }, [shop]);
+
   const labels = shellLabels(language);
-  const query = shop && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shop)
-    ? `?shop=${encodeURIComponent(shop)}`
+  const effectiveShop = shop || activeShop;
+  const query = effectiveShop && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveShop)
+    ? `?shop=${encodeURIComponent(effectiveShop)}`
     : "";
 
   return destinations.map((item) => {

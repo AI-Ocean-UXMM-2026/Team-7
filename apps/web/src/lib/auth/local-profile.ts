@@ -102,7 +102,7 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string; displ
     FROM shop_memberships sm
     JOIN shops s ON sm.shop_id = s.id
     WHERE sm.user_id = ? AND s.is_sample = 0
-    ORDER BY sm.created_at ASC
+    ORDER BY (SELECT COUNT(*) FROM orders o WHERE o.shop_id = s.id) DESC, sm.created_at ASC
     LIMIT 1
   `).get(user.id) as { shop_id: string } | undefined;
 

@@ -1,9 +1,10 @@
 "use server";
 
-import { saveOrderSchema, uuidSchema, type OrderDetails } from "@ocean/contracts";
+import { myanmarDate, saveOrderSchema, uuidSchema, type OrderDetails } from "@ocean/contracts";
 import { getOrders, saveOrder as repoSaveOrder } from "@/lib/db";
 import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops } from "@/lib/auth/session";
 import { ensureLocalProfile } from "@/lib/auth/local-profile";
+import { createSampleSnapshot } from "@/lib/business/sample-provider";
 
 export type OrdersResult = { orders?: OrderDetails[]; error?: string; status?: number };
 
@@ -32,6 +33,10 @@ export async function loadOrders(shopId: string): Promise<OrdersResult> {
   }
 
   try {
+    if (membership.shop?.is_sample || shopId === "00000000-0000-4000-8000-000000000001") {
+      const sample = createSampleSnapshot(myanmarDate(new Date().toISOString()));
+      return { orders: sample.orders };
+    }
     const orders = getOrders(shopId, undefined, session.userId);
     return { orders };
   } catch (error) {

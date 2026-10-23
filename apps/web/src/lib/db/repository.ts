@@ -41,7 +41,7 @@ export function listShops(userId?: string) {
       FROM shops s
       JOIN shop_memberships sm ON s.id = sm.shop_id
       WHERE sm.user_id = ?
-      ORDER BY s.is_sample ASC, s.created_at DESC
+      ORDER BY s.is_sample ASC, (SELECT COUNT(*) FROM orders o WHERE o.shop_id = s.id) DESC, s.created_at ASC
     `).all(userId) as Array<{
       id: string;
       name: string;
@@ -49,7 +49,7 @@ export function listShops(userId?: string) {
       is_sample: number;
     }>;
   }
-  return db.prepare("SELECT id, name, currency, is_sample FROM shops ORDER BY is_sample ASC, created_at DESC").all() as Array<{
+  return db.prepare("SELECT id, name, currency, is_sample FROM shops ORDER BY is_sample ASC, (SELECT COUNT(*) FROM orders o WHERE o.shop_id = id) DESC, created_at ASC").all() as Array<{
     id: string;
     name: string;
     currency: string;

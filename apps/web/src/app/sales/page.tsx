@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { myanmarDate } from "@ocean/contracts";
 import { PageHeading } from "@ocean/ui";
 import { SectionNav } from "@/components/section-nav";
 import { OrderManager } from "@/components/order-manager";
@@ -7,6 +8,7 @@ import { VouchersView } from "@/components/vouchers-view";
 import { PaymentsView } from "@/components/payments-view";
 import { getPaymentEvidenceReviews, getPayments } from "@/lib/db";
 import { getCurrentSession, getAuthorizedShopSession, getUserAuthorizedShops } from "@/lib/auth/session";
+import { createSampleSnapshot } from "@/lib/business/sample-provider";
 import { loadOrders } from "./actions";
 
 export const metadata: Metadata = { title: "Sales Management" };
@@ -37,7 +39,11 @@ export default async function SalesPage({
   const selected = tab === "vouchers" || tab === "payments" ? tab : "orders";
   const initial = await loadOrders(shopId);
   const orders = initial.orders ?? [];
-  const payments = selected === "payments" ? JSON.parse(JSON.stringify(getPayments(shopId, session.userId))) : [];
+  const payments = selected === "payments"
+    ? (shop.is_sample
+        ? createSampleSnapshot(myanmarDate(new Date().toISOString())).payments
+        : JSON.parse(JSON.stringify(getPayments(shopId, session.userId))))
+    : [];
   const evidenceReviews = selected === "payments" ? JSON.parse(JSON.stringify(getPaymentEvidenceReviews(shopId, session.userId))) : [];
 
   return (

@@ -290,7 +290,7 @@ export function EfficiencyGauge({
   const clamped = Math.max(0, Math.min(100, marginPercent));
 
   // Circular gauge parameters
-  const radius = 54;
+  const radius = 52;
   const strokeWidth = 9;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (circumference * clamped) / 100;
@@ -298,7 +298,7 @@ export function EfficiencyGauge({
   return (
     <div className="efficiency-gauge-wrap" role="region" aria-label="Profit efficiency gauge">
       <div className="efficiency-ring-container">
-        <svg className="efficiency-svg" width="140" height="140" viewBox="0 0 140 140">
+        <svg className="efficiency-svg" viewBox="0 0 140 140" aria-hidden="true">
           <circle
             className="ring-bg"
             cx="70"
