@@ -8,6 +8,7 @@ import type { OrderDetails } from "@ocean/contracts";
 import { saveOrder } from "@/app/sales/actions";
 import { ScreenshotToOrderWorkflow } from "@/app/assistant/screenshot-workflow";
 import { VoucherCard, type VoucherOrder } from "./voucher-card";
+import { useShellLanguage } from "./shell-language";
 import {
   buildCustomerReplies,
   draftTotals,
@@ -21,6 +22,99 @@ import dolphinAccountant from "../../../../assets/dolphin/dolphin-accountant.png
 import dolphinLauncher from "../../../../assets/dolphin/dolphin-launcher.png";
 
 type View = "home" | "chat" | "match";
+
+const ASSISTANT_STRINGS = {
+  en: {
+    title: "တူတူတွက်မယ်",
+    subtitle: "YOUR SELLER ASSISTANT",
+    chatToOrder: "Chat to Order",
+    chatToOrderDesc: "Turn customer messages into instant vouchers",
+    matchPayment: "Match Payment to Order",
+    matchPaymentDesc: "Verify transaction slip & connect order",
+    backHome: "Back to home",
+    dashboard: "Dashboard ↗",
+    sales: "Sales ↗",
+    pasteFromClipboard: "📋 Paste from clipboard",
+    writeOrder: "✏️ Write order",
+    useTemplate: "✨ Use Template",
+    templateNotice: "Template inserted! Fill in the customer details.",
+    writePlaceholderNew: "Type customer conversation or order details (e.g. Daw Aye Aye, 09777222111, Kamayut, Lipstick 2 pcs 25000 kyat)…",
+    writePlaceholderAppend: "Type new message or additional details (e.g. Daw Aye Aye, 09777222111, Kamayut)…",
+    generateVoucher: "Generate Voucher",
+    generating: "Generating voucher…",
+    updateVoucher: "Update Voucher with New Message",
+    pasteTitle: "Paste Customer Order",
+    pasteDesc: "Copy customer chat from Facebook or TikTok, then click here to generate voucher.",
+    pasteButton: "📋 Paste & Generate Voucher",
+    analyzing: "Analyzing & Generating Voucher…",
+    editOrder: "Edit Order Details (အချက်အလက် ပြင်ဆင်ရန်)",
+    done: "✓ Done",
+    customerName: "Customer name",
+    phone: "Phone",
+    deliveryAddress: "Delivery address",
+    notes: "Notes",
+    optional: "(Optional)",
+    products: "Products",
+    addProduct: "+ Add product",
+    deliveryFee: "Delivery fee (MMK)",
+    discount: "Discount (MMK)",
+    missingDetails: "Missing details? Add message:",
+    pasteNew: "📋 Paste new",
+    write: "✏️ Write",
+    customerReply: "Customer Reply",
+    copyReply: "📋 Copy Reply",
+    newOrder: "+ New Order",
+    orderSavedSuccess: "✓ Order saved to shop! It now appears on your Sales page.",
+    viewInSales: "View in Sales Management ↗",
+    goToDashboard: "Go to Dashboard ↗",
+    startNextOrder: "+ Start Next Order",
+  },
+  my: {
+    title: "တူတူတွက်မယ်",
+    subtitle: "အရောင်းအထောက်အကူ",
+    chatToOrder: "ချက်တင်မှ ဘောက်ချာထုတ်ရန်",
+    chatToOrderDesc: "ဖောက်သည်စကားပြောချက်များမှ ချက်ချင်းဘောက်ချာထုတ်ယူပါ",
+    matchPayment: "ငွေလွှဲစလစ်နှင့် အော်ဒါတိုက်ဆိုင်စစ်ဆေးရန်",
+    matchPaymentDesc: "ငွေလွှဲပြေစာကို အတည်ပြုပြီး အော်ဒါနှင့် တွဲဆက်ပါ",
+    backHome: "မူလစာမျက်နှာသို့",
+    dashboard: "ဒက်ရှ်ဘုတ် ↗",
+    sales: "အရောင်း ↗",
+    pasteFromClipboard: "📋 ကလစ်ဘုတ်မှ ကူးယူထည့်ရန်",
+    writeOrder: "✏️ စာရိုက်ထည့်ရန်",
+    useTemplate: "✨ ပုံစံထည့်ရန်",
+    templateNotice: "အော်ဒါပုံစံ ထည့်သွင်းပြီးပါပြီ။ အချက်အလက်များ ဖြည့်စွက်ပေးပါ။",
+    writePlaceholderNew: "ဖောက်သည်ပြောကြားချက် သို့မဟုတ် အော်ဒါအချက်အလက် ရိုက်ထည့်ပါ (ဥပမာ - ဒေါ်အေးအေး၊ ၀၉၇၇၇၂၂၂၁၁၁၊ ကမာရွတ်၊ နှုတ်ခမ်းနီ ၂ ခု ၂၅၀၀၀ ကျပ်)...",
+    writePlaceholderAppend: "ဖြည့်စွက်အချက်အလက် သို့မဟုတ် မက်ဆေ့ခ်ျအသစ် ရိုက်ထည့်ပါ...",
+    generateVoucher: "ဘောက်ချာထုတ်ရန်",
+    generating: "ဘောက်ချာထုတ်နေပါသည်...",
+    updateVoucher: "မက်ဆေ့ခ်ျအသစ်ဖြင့် ဘောက်ချာပြင်ဆင်ရန်",
+    pasteTitle: "ဖောက်သည်အော်ဒါ ကူးယူထည့်ရန်",
+    pasteDesc: "Facebook သို့မဟုတ် TikTok မှ ဖောက်သည်ပြောကြားချက်ကို copy ကူးပြီး ဤနေရာတွင် နှိပ်၍ ဘောက်ချာထုတ်ပါ",
+    pasteButton: "📋 စာကူးယူပြီး ဘောက်ချာထုတ်မည်",
+    analyzing: "အချက်အလက်စစ်ဆေးပြီး ဘောက်ချာထုတ်နေပါသည်...",
+    editOrder: "အချက်အလက် ပြင်ဆင်ရန်",
+    done: "✓ ပြီးပါပြီ",
+    customerName: "ဖောက်သည်အမည်",
+    phone: "ဖုန်းနံပါတ်",
+    deliveryAddress: "ပို့ဆောင်ရမည့်လိပ်စာ",
+    notes: "မှတ်ချက်",
+    optional: "(မဖြစ်မနေ မဟုတ်ပါ)",
+    products: "ပစ္စည်းများ",
+    addProduct: "+ ပစ္စည်းအသစ်ထည့်ရန်",
+    deliveryFee: "ပို့ဆောင်ခ (ကျပ်)",
+    discount: "လျှော့ဈေး (ကျပ်)",
+    missingDetails: "အချက်အလက်လိုသေးလား? မက်ဆေ့ခ်ျထပ်ဖြည့်ရန်:",
+    pasteNew: "📋 အသစ်ကူးထည့်မည်",
+    write: "✏️ စာရိုက်မည်",
+    customerReply: "ဖောက်သည်ထံ အကြောင်းပြန်စာ",
+    copyReply: "📋 ကူးယူမည်",
+    newOrder: "+ အော်ဒါအသစ်",
+    orderSavedSuccess: "✓ အော်ဒါကို သိမ်းဆည်းပြီးပါပြီ! အရောင်းစာရင်းတွင် ကြည့်ရှုနိုင်ပါသည်။",
+    viewInSales: "အရောင်းစာရင်းတွင် ကြည့်ရန် ↗",
+    goToDashboard: "ဒက်ရှ်ဘုတ်သို့ ↗",
+    startNextOrder: "+ နောက်အော်ဒါအသစ် စတင်ရန်",
+  },
+};
 
 function SourceTag({ source }: { source: FieldSource }) {
   const label = source === "extracted" ? "AI" : source === "manual" ? "Edited" : "Required";
@@ -38,6 +132,9 @@ export function SayaAssistant({
   const [view, setView] = useState<View>("home");
   const [resumeEvidenceId, setResumeEvidenceId] = useState<string | null>(null);
 
+  const { language, setLanguage } = useShellLanguage();
+  const t = ASSISTANT_STRINGS[language] || ASSISTANT_STRINGS.en;
+
   // Core Chat to Order state matching desktop assistant
   const [chat, setChat] = useState("");
   const [order, setOrder] = useState<EditableChatOrder>(() => emptyEditableOrder());
@@ -53,16 +150,19 @@ export function SayaAssistant({
   const [showAppendWrite, setShowAppendWrite] = useState(false);
   const [appendInput, setAppendInput] = useState("");
   const [savedOrder, setSavedOrder] = useState<VoucherOrder | null>(null);
+  const [activeShopId, setActiveShopId] = useState<string>(shopId);
   const [shopName, setShopName] = useState("တူတူတွက်မယ် Store");
 
-  // Fetch active shop name
+  // Keep active shop in sync via payment-context
   useEffect(() => {
     let active = true;
-    fetch(`/api/shop-members?shop=${encodeURIComponent(shopId)}`)
+    const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : "";
+    fetch(`/api/assistant/payment-context${q}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (active && data?.shop_name) {
-          setShopName(data.shop_name);
+        if (active && data) {
+          if (data.shop_id) setActiveShopId(data.shop_id);
+          if (data.shop_name) setShopName(data.shop_name);
         }
       })
       .catch(() => {});
@@ -71,17 +171,34 @@ export function SayaAssistant({
     };
   }, [shopId]);
 
+  const resetOrderState = useCallback(() => {
+    setChat("");
+    setHasOrder(false);
+    setConfirmed(false);
+    setSavedOrder(null);
+    setOrderId(null);
+    orderIdRef.current = null;
+    setOrder(emptyEditableOrder());
+    setShowEditForm(false);
+    setShowAppendWrite(false);
+    setAppendInput("");
+    setNotice("");
+  }, []);
+
   // Listen for open events triggered by topbar / banner buttons
   useEffect(() => {
     const handleOpen = (e: Event) => {
       setIsOpen(true);
-      const detail = (e as CustomEvent<{ view?: View; evidenceId?: string }>).detail;
+      const detail = (e as CustomEvent<{ view?: View; evidenceId?: string; reset?: boolean }>).detail;
+      if (detail?.reset) {
+        resetOrderState();
+      }
       if (detail?.view) setView(detail.view);
       setResumeEvidenceId(detail?.evidenceId ?? null);
     };
     window.addEventListener("open-saya-assistant", handleOpen);
     return () => window.removeEventListener("open-saya-assistant", handleOpen);
-  }, []);
+  }, [resetOrderState]);
 
   function editTextField(
     field: "customer_name" | "customer_phone" | "delivery_address" | "notes" | "delivery_fee_mmk" | "discount_mmk",
@@ -166,11 +283,21 @@ export function SayaAssistant({
     setConfirmed(false);
   }
 
+  const burmeseTemplate = "အမည်- \nလိပ်စာ- \nဖုန်းနံပါတ်- \nပစ္စည်း- \nအရေအတွက်- ";
+  const englishTemplate = "Name- \nAddress- \nPhone number- \nItem- \nQuantity- ";
+
+  function applyTemplate() {
+    const tpl = language === "my" ? burmeseTemplate : englishTemplate;
+    setChat(tpl);
+    setChatInputMode("write");
+    setNotice(t.templateNotice);
+  }
+
   const generateOrderFromText = useCallback(
     async (rawText: string) => {
       const textToAnalyze = rawText.trim();
       if (!textToAnalyze) {
-        setNotice("Please paste or write customer order details first.");
+        setNotice(language === "my" ? "ဖောက်သည်အော်ဒါ အချက်အလက်များ အရင်ရိုက်ထည့်ပါ သို့မဟုတ် ကူးထည့်ပါ" : "Please paste or write customer order details first.");
         return;
       }
 
@@ -178,25 +305,26 @@ export function SayaAssistant({
       setHasOrder(false);
       setConfirmed(false);
       setSavedOrder(null);
-      setNotice("Analyzing order details and generating voucher…");
+      setNotice(language === "my" ? "အော်ဒါအချက်အလက် စစ်ဆေးပြီး ဘောက်ချာထုတ်နေပါသည်…" : "Analyzing order details and generating voucher…");
 
       const nextOrderId = crypto.randomUUID();
       orderIdRef.current = nextOrderId;
       setOrderId(nextOrderId);
 
       try {
-        const result = await extractChatOrder(textToAnalyze, shopId);
+        const targetShop = activeShopId || shopId;
+        const result = await extractChatOrder(textToAnalyze, targetShop);
         setOrder(result.order);
         setHasOrder(true);
         setShowEditForm(false);
-        setNotice(result.notice || "✓ Voucher generated! Review or save as PNG.");
+        setNotice(result.notice || (language === "my" ? "✓ ဘောက်ချာ ထုတ်ပြီးပါပြီ! အချက်အလက်စစ်ဆေးပြီး သိမ်းဆည်းနိုင်ပါသည်" : "✓ Voucher generated! Review or save as PNG."));
       } catch {
-        setNotice("Could not organize conversation. Check details and try again.");
+        setNotice(language === "my" ? "အချက်အလက် မဖတ်နိုင်ပါ။ ပြန်လည်စစ်ဆေးပြီး ထပ်ကြိုးစားပါ" : "Could not organize conversation. Check details and try again.");
       } finally {
         setIsExtracting(false);
       }
     },
-    [shopId],
+    [activeShopId, shopId, language],
   );
 
   async function handlePasteAndGenerate() {
@@ -220,7 +348,7 @@ export function SayaAssistant({
 
     // Fallback: switch to write box so user can paste with Ctrl+V
     setChatInputMode("write");
-    setNotice("Paste your customer chat below, then click Generate Voucher.");
+    setNotice(language === "my" ? "ဖောက်သည်ပြောကြားချက်ကို အောက်တွင် ရိုက်ထည့်ပြီး ဘောက်ချာထုတ်ရန် နှိပ်ပါ" : "Paste your customer chat below, then click Generate Voucher.");
   }
 
   async function appendMessageAndReExtract(newText: string) {
@@ -229,9 +357,10 @@ export function SayaAssistant({
     const combined = chat.trim() ? `${chat.trim()}\n${trimmed}` : trimmed;
     setChat(combined);
     setIsExtracting(true);
-    setNotice("Adding new message and updating voucher…");
+    setNotice(language === "my" ? "မက်ဆေ့ခ်ျအသစ် ထပ်ဖြည့်ပြီး ဘောက်ချာပြင်ဆင်နေပါသည်…" : "Adding new message and updating voucher…");
     try {
-      const result = await extractChatOrder(combined, shopId);
+      const targetShop = activeShopId || shopId;
+      const result = await extractChatOrder(combined, targetShop);
       setOrder((prev) => {
         const extracted = result.order;
         return {
@@ -264,9 +393,9 @@ export function SayaAssistant({
       setSavedOrder(null);
       setConfirmed(false);
       setHasOrder(true);
-      setNotice("✓ New message added! Voucher updated.");
+      setNotice(language === "my" ? "✓ မက်ဆေ့ခ်ျအသစ် ထည့်သွင်းပြီးပါပြီ! ဘောက်ချာကို အပ်ဒိတ်လုပ်ပြီးပါပြီ" : "✓ New message added! Voucher updated.");
     } catch {
-      setNotice("Could not parse new message. You can also edit details directly.");
+      setNotice(language === "my" ? "မက်ဆေ့ခ်ျအသစ် မဖတ်နိုင်ပါ။ တိုက်ရိုက်ပြင်ဆင်နိုင်ပါသည်" : "Could not parse new message. You can also edit details directly.");
     } finally {
       setIsExtracting(false);
     }
@@ -283,19 +412,19 @@ export function SayaAssistant({
       }
     } catch {}
     setShowAppendWrite(true);
-    setNotice("Type or paste the additional details in the box below.");
+    setNotice(language === "my" ? "ဖြည့်စွက်အချက်အလက်ကို အောက်ပါကွက်လပ်တွင် ရိုက်ထည့်ပါ" : "Type or paste the additional details in the box below.");
   }
 
   async function confirmOrder() {
     if (confirmed) {
-      setNotice("This order is already saved to your shop.");
+      setNotice(language === "my" ? "ဤအော်ဒါကို ဆိုင်စာရင်းထဲတွင် သိမ်းဆည်းပြီးသား ဖြစ်ပါသည်" : "This order is already saved to your shop.");
       return;
     }
     const errors = validateEditableOrder(order);
     if (errors.length > 0) {
       setConfirmed(false);
       setShowEditForm(true);
-      setNotice("Please complete required order fields before saving.");
+      setNotice(language === "my" ? "မဖြစ်မနေ လိုအပ်သောအချက်အလက်များကို ဖြည့်စွက်ပါ" : "Please complete required order fields before saving.");
       return;
     }
 
@@ -303,11 +432,12 @@ export function SayaAssistant({
     orderIdRef.current = stableOrderId;
     setOrderId(stableOrderId);
     setIsSaving(true);
-    setNotice("Saving order to shop workspace…");
+    setNotice(language === "my" ? "အော်ဒါကို ဆိုင်စာရင်းထဲသို့ သိမ်းဆည်းနေပါသည်…" : "Saving order to shop workspace…");
 
     try {
+      const targetShopId = activeShopId || shopId;
       const payload = {
-        shop_id: shopId,
+        shop_id: targetShopId,
         id: stableOrderId,
         expected_updated_at: null,
         customer_name: order.customer_name.trim(),
@@ -331,9 +461,16 @@ export function SayaAssistant({
       } else if (result.order) {
         setSavedOrder(result.order as unknown as VoucherOrder);
         setConfirmed(true);
-        setNotice(`✓ Order saved to ${shopName}! It now appears on your Sales page.`);
+        setNotice(
+          language === "my"
+            ? `✓ အော်ဒါကို ${shopName} တွင် သိမ်းဆည်းပြီးပါပြီ! အရောင်းစာရင်းတွင် ကြည့်ရှုနိုင်ပါသည်။`
+            : `✓ Order saved to ${shopName}! It now appears on your Sales page.`
+        );
         if (onOrderSaved) onOrderSaved(result.order);
         window.dispatchEvent(new CustomEvent("refresh-orders"));
+        try {
+          window.localStorage.setItem("salesayar_orders_updated", Date.now().toString());
+        } catch {}
       }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Failed to save order.");
@@ -417,16 +554,34 @@ export function SayaAssistant({
                 <Image src={dolphinAccountant} alt="" width={34} height={34} priority />
               </span>
               <span className="title-copy">
-                <strong>တူတူတွက်မယ်</strong>
-                <small>YOUR SELLER ASSISTANT</small>
+                <strong>{t.title}</strong>
+                <small>{t.subtitle}</small>
               </span>
             </div>
             <div className="window-actions">
+              <div className="assistant-lang-switch" role="group" aria-label="Assistant Language">
+                <button
+                  type="button"
+                  className={`lang-btn ${language === "en" ? "active" : ""}`}
+                  onClick={() => setLanguage("en")}
+                  title="Switch to English"
+                >
+                  EN
+                </button>
+                <button
+                  type="button"
+                  className={`lang-btn ${language === "my" ? "active" : ""}`}
+                  onClick={() => setLanguage("my")}
+                  title="မြန်မာဘာသာသို့ ပြောင်းရန်"
+                >
+                  မြန်မာ
+                </button>
+              </div>
               <Link
-                href={shopId ? `/?shop=${encodeURIComponent(shopId)}` : "/"}
+                href={activeShopId ? `/?shop=${encodeURIComponent(activeShopId)}` : "/"}
                 className="header-home-btn"
-                title="Open Dashboard"
-                aria-label="Open Dashboard"
+                title={t.dashboard}
+                aria-label={t.dashboard}
               >
                 <Icon name="home" size={15} />
               </Link>
@@ -451,8 +606,8 @@ export function SayaAssistant({
             </div>
           </header>
 
-          {/* Scrollable Body */}
-          <div className="panel-scroll">
+          {/* Scrollable Body with Smooth View Transitions */}
+          <div className="panel-scroll view-enter-anim" key={view}>
             {view === "home" ? (
               <>
                 {/* Mobbin-inspired Clean Hero */}
@@ -461,8 +616,8 @@ export function SayaAssistant({
                     <span className="welcome-ripple" />
                     <Image src={dolphinAccountant} alt="တူတူတွက်မယ်" width={86} height={86} priority />
                   </div>
-                  <h1 className="home-title">တူတူတွက်မယ်</h1>
-                  <p className="home-subtitle">Your Seller Assistant</p>
+                  <h1 className="home-title">{t.title}</h1>
+                  <p className="home-subtitle">{t.subtitle}</p>
                 </section>
 
                 {/* Two Clean Action Cards */}
@@ -479,8 +634,8 @@ export function SayaAssistant({
                       <Icon name="sales" size={24} />
                     </div>
                     <div className="clean-action-text">
-                      <strong>Chat to Order</strong>
-                      <span>Turn customer messages into instant vouchers</span>
+                      <strong>{t.chatToOrder}</strong>
+                      <span>{t.chatToOrderDesc}</span>
                     </div>
                     <span className="action-arrow">→</span>
                   </button>
@@ -498,8 +653,8 @@ export function SayaAssistant({
                       <Icon name="wallet" size={24} />
                     </div>
                     <div className="clean-action-text">
-                      <strong>Match Payment to Order</strong>
-                      <span>Verify transaction slip & connect order</span>
+                      <strong>{t.matchPayment}</strong>
+                      <span>{t.matchPaymentDesc}</span>
                     </div>
                     <span className="action-arrow">→</span>
                   </button>
@@ -515,18 +670,18 @@ export function SayaAssistant({
                   </div>
                   <div className="web-active-shop-links">
                     <Link
-                      href={shopId ? `/?shop=${encodeURIComponent(shopId)}` : "/"}
+                      href={activeShopId ? `/?shop=${encodeURIComponent(activeShopId)}` : "/"}
                       className="web-lead-btn"
-                      title="Go to Dashboard"
+                      title={t.dashboard}
                     >
-                      Dashboard ↗
+                      {t.dashboard}
                     </Link>
                     <Link
-                      href={shopId ? `/sales?shop=${encodeURIComponent(shopId)}` : "/sales"}
+                      href={activeShopId ? `/sales?shop=${encodeURIComponent(activeShopId)}` : "/sales"}
                       className="web-lead-btn"
-                      title="Go to Sales"
+                      title={t.sales}
                     >
-                      Sales ↗
+                      {t.sales}
                     </Link>
                   </div>
                 </div>
@@ -544,38 +699,48 @@ export function SayaAssistant({
                       setNotice("");
                     }}
                   >
-                    <span aria-hidden="true">←</span> Back to home
+                    <span aria-hidden="true">←</span> {t.backHome}
                   </button>
                   <Link
-                    href={shopId ? `/?shop=${encodeURIComponent(shopId)}` : "/"}
+                    href={activeShopId ? `/?shop=${encodeURIComponent(activeShopId)}` : "/"}
                     className="header-home-btn"
-                    title="Open Dashboard"
+                    title={t.dashboard}
                     style={{ textDecoration: "none" }}
                   >
-                    <Icon name="home" size={14} /> Dashboard ↗
+                    <Icon name="home" size={14} /> {t.dashboard}
                   </Link>
                 </div>
 
                 {view === "chat" ? (
                   <section className="workflow" aria-label="Chat to Order">
-                    {/* Mode Tabs: Paste from clipboard vs Write order */}
-                    <div className="chat-mode-tabs">
+                    {/* Mode Tabs: Paste from clipboard vs Write order + Quick Template */}
+                    <div className="chat-mode-tabs" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        <button
+                          type="button"
+                          className={`mode-tab-btn ${chatInputMode === "paste" ? "active" : ""}`}
+                          onClick={() => {
+                            setChatInputMode("paste");
+                            void handlePasteAndGenerate();
+                          }}
+                        >
+                          {t.pasteFromClipboard}
+                        </button>
+                        <button
+                          type="button"
+                          className={`mode-tab-btn ${chatInputMode === "write" ? "active" : ""}`}
+                          onClick={() => setChatInputMode("write")}
+                        >
+                          {t.writeOrder}
+                        </button>
+                      </div>
                       <button
                         type="button"
-                        className={`mode-tab-btn ${chatInputMode === "paste" ? "active" : ""}`}
-                        onClick={() => {
-                          setChatInputMode("paste");
-                          void handlePasteAndGenerate();
-                        }}
+                        className="template-chip-btn"
+                        onClick={applyTemplate}
+                        title={language === "my" ? "အော်ဒါပုံစံ အလိုအလျောက် ထည့်သွင်းရန်" : "Insert order quick template"}
                       >
-                        📋 Paste from clipboard
-                      </button>
-                      <button
-                        type="button"
-                        className={`mode-tab-btn ${chatInputMode === "write" ? "active" : ""}`}
-                        onClick={() => setChatInputMode("write")}
-                      >
-                        ✏️ Write order
+                        {t.useTemplate}
                       </button>
                     </div>
 
@@ -589,11 +754,7 @@ export function SayaAssistant({
                           maxLength={20_000}
                           rows={hasOrder ? 3 : 4}
                           onChange={(e) => setChat(e.target.value)}
-                          placeholder={
-                            hasOrder
-                              ? "Type new message or additional details (e.g. Daw Aye Aye, 09777222111, Kamayut)…"
-                              : "Type customer conversation or order details (e.g. Daw Aye Aye, 09777222111, Kamayut, Lipstick 2 pcs 25000 kyat)…"
-                          }
+                          placeholder={hasOrder ? t.writePlaceholderAppend : t.writePlaceholderNew}
                         />
                         <div style={{ marginTop: "6px", display: "flex", gap: "8px" }}>
                           <button
@@ -604,25 +765,19 @@ export function SayaAssistant({
                             onClick={() => void generateOrderFromText(chat)}
                           >
                             {isExtracting
-                              ? "Generating voucher…"
+                              ? t.generating
                               : hasOrder
-                              ? "Update Voucher with New Message"
-                              : "Generate Voucher"}
+                              ? t.updateVoucher
+                              : t.generateVoucher}
                           </button>
                           {hasOrder && (
                             <button
                               type="button"
                               className="secondary-button"
-                              title="Clear and start new voucher"
-                              onClick={() => {
-                                setChat("");
-                                setHasOrder(false);
-                                setConfirmed(false);
-                                setSavedOrder(null);
-                                setOrder(emptyEditableOrder());
-                              }}
+                              title={language === "my" ? "ရှင်းလင်းပြီး အော်ဒါအသစ် စတင်ရန်" : "Clear and start new voucher"}
+                              onClick={resetOrderState}
                             >
-                              + New
+                              {t.newOrder}
                             </button>
                           )}
                         </div>
@@ -649,9 +804,9 @@ export function SayaAssistant({
                               <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
                             </svg>
                           </div>
-                          <strong className="paste-card-title">Paste Customer Order</strong>
+                          <strong className="paste-card-title">{t.pasteTitle}</strong>
                           <p className="paste-card-desc">
-                            Copy customer chat from Facebook or TikTok, then click here to generate voucher.
+                            {t.pasteDesc}
                           </p>
                           <button
                             type="button"
@@ -662,8 +817,20 @@ export function SayaAssistant({
                               void handlePasteAndGenerate();
                             }}
                           >
-                            {isExtracting ? "Analyzing & Generating Voucher…" : "📋 Paste & Generate Voucher"}
+                            {isExtracting ? t.analyzing : t.pasteButton}
                           </button>
+                          <div style={{ marginTop: "12px", textAlign: "center" }}>
+                            <button
+                              type="button"
+                              className="template-chip-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                applyTemplate();
+                              }}
+                            >
+                              {t.useTemplate}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -677,6 +844,7 @@ export function SayaAssistant({
                           sourceText={chat}
                           isEditing={showEditForm}
                           onEdit={() => setShowEditForm(!showEditForm)}
+                          onNewOrder={resetOrderState}
                           onSaveToShop={confirmOrder}
                           isSavingToShop={isSaving}
                           isSavedToShop={confirmed}
@@ -911,23 +1079,35 @@ export function SayaAssistant({
                           </div>
                         </VoucherCard>
 
-                        {/* Order Saved Success Bar with direct link leading to Dashboard and Sales */}
+                        {/* Order Saved Success Bar with direct link leading to Dashboard, Sales, and starting Next Order */}
                         {confirmed && (
                           <div className="web-saved-success-bar no-print">
-                            <strong>✓ Order saved to {shopName}! It now appears on your Sales page.</strong>
+                            <strong>
+                              {language === "my"
+                                ? `✓ အော်ဒါကို ${shopName} တွင် သိမ်းဆည်းပြီးပါပြီ! အရောင်းစာရင်းတွင် ကြည့်ရှုနိုင်ပါသည်။`
+                                : `✓ Order saved to ${shopName}! It now appears on your Sales page.`}
+                            </strong>
                             <div className="web-saved-actions">
                               <Link
-                                href={`/sales?shop=${encodeURIComponent(shopId)}&order=${savedOrder?.id || orderId}`}
+                                href={`/sales?shop=${encodeURIComponent(activeShopId || shopId)}&order=${savedOrder?.id || orderId}`}
                                 className="web-lead-btn primary"
                               >
-                                View in Sales Management ↗
+                                {t.viewInSales}
                               </Link>
                               <Link
-                                href={`/?shop=${encodeURIComponent(shopId)}`}
+                                href={`/?shop=${encodeURIComponent(activeShopId || shopId)}`}
                                 className="web-lead-btn"
                               >
-                                Go to Dashboard ↗
+                                {t.goToDashboard}
                               </Link>
+                              <button
+                                type="button"
+                                className="web-lead-btn"
+                                style={{ background: "#2563eb", color: "#ffffff", border: "none", fontWeight: 650, cursor: "pointer" }}
+                                onClick={resetOrderState}
+                              >
+                                {t.startNextOrder}
+                              </button>
                             </div>
                           </div>
                         )}

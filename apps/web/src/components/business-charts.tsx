@@ -7,7 +7,6 @@ import {
   BarChart,
   CartesianGrid,
   LabelList,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -85,7 +84,7 @@ export function TrendChart({
         }
       >
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <AreaChart data={rows} margin={{ top: 10, right: 14, left: -10, bottom: 4 }} accessibilityLayer>
+          <AreaChart data={rows} margin={{ top: 16, right: 20, left: 10, bottom: 8 }} accessibilityLayer>
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3478f6" stopOpacity={0.28} />
@@ -218,7 +217,7 @@ export function LastCostsBarChart({ rows }: { rows: Trend }) {
     <div className="last-costs-chart-wrap" role="img" aria-label="Sales and expenses comparison chart">
       <div className="business-chart last-costs-chart">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <BarChart data={rows} margin={{ top: 12, right: 12, left: -14, bottom: 4 }}>
+          <BarChart data={rows} margin={{ top: 16, right: 16, left: 6, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="#eef2f8" strokeDasharray="3 3" />
             <XAxis
               dataKey="date"
@@ -229,7 +228,7 @@ export function LastCostsBarChart({ rows }: { rows: Trend }) {
               tickLine={false}
             />
             <YAxis
-              width={50}
+              width={56}
               tickFormatter={shortMmk}
               tick={{ fill: "#64748b", fontSize: 11 }}
               axisLine={false}
@@ -427,7 +426,7 @@ export function ExpenseBreakdownChart({
               <LabelList
                 dataKey="amount_mmk"
                 position="right"
-                formatter={(val: any) => shortMmk(Number(val))}
+                formatter={(val: unknown) => shortMmk(Number(val))}
                 style={{ fontSize: 10, fill: "#475569", fontWeight: 600 }}
               />
             </Bar>

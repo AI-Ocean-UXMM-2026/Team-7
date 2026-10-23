@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Card, Icon } from "@ocean/ui";
+import { Card } from "@ocean/ui";
 import {
   expenseBreakdown,
   financialTrend,
@@ -22,10 +22,10 @@ import { OrderDrawer } from "./order-manager";
 import { ExpenseForm } from "./expense-form";
 import { createLiveProvider } from "@/lib/business/live-provider";
 import { createSampleProvider } from "@/lib/business/sample-provider";
-import { getDashboardAttention, type DashboardAttentionItem } from "@/lib/business/attention";
+import { getDashboardAttention } from "@/lib/business/attention";
 import { formatMmk, type BusinessProvider, type BusinessSnapshot } from "@/lib/business/types";
 import { useShellLanguage } from "./shell-language";
-import { shellLabels, type ShellLanguage } from "@/lib/shell-ui";
+import { shellLabels } from "@/lib/shell-ui";
 
 import { OverviewRail } from "./overview-rail";
 
@@ -92,12 +92,22 @@ export function BusinessSurface({
     };
   }, [provider, generation]);
 
+  useEffect(() => {
+    const onRefresh = () => setGeneration((v) => v + 1);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "salesayar_orders_updated") setGeneration((v) => v + 1);
+    };
+    window.addEventListener("refresh-orders", onRefresh);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("refresh-orders", onRefresh);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
   const reload = () => {
-    setResult({});
     setGeneration((value) => value + 1);
   };
-
-  const query = shopId ? `shop=${encodeURIComponent(shopId)}` : "";
 
   return (
     <div className="page-stack business-surface">
@@ -853,151 +863,3 @@ function BusinessContent({
   );
 }
 
-function DashboardAttention({
-  items,
-  openOrder,
-  language,
-}: {
-  data?: BusinessSnapshot;
-  items: DashboardAttentionItem[];
-  openOrder: (id: string) => void;
-  language: ShellLanguage;
-}) {
-  const labels = shellLabels(language);
-  return (
-    <Card className="attention-card">
-      <div className="card-heading">
-        <div>
-          <h2>{labels.needsAttention}</h2>
-          <p className="muted">{language === "my" ? "ချက်ချင်း စစ်ဆေးရန် လိုအပ်သော အချက်များ" : "Action items from this period"}</p>
-        </div>
-        {items.length > 0 && (
-          <span className="badge status-warning">
-            {language === "my" ? "စစ်ဆေးရန်ရှိ" : "Review needed"}
-          </span>
-        )}
-      </div>
-      {!items.length ? (
-        <div className="attention-empty">
-          <h3>{labels.noAttention}</h3>
-          <p>
-            {language === "my"
-              ? "စစ်ဆေးရန် အော်ဒါမူကြမ်း သို့မဟုတ် စလစ်မရှိပါ။ အားလုံး အဆင်ပြေနေပါသည်။"
-              : "No drafts, unpaid orders, or unfulfilled confirmed orders require immediate review."}
-          </p>
-        </div>
-      ) : (
-        <ul className="attention-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <span className="attention-icon" aria-hidden="true">
-                <Icon name={item.icon} />
-              </span>
-              <div className="attention-copy">
-                <strong>{item.title}</strong>
-                <p>{item.detail}</p>
-              </div>
-              {item.orderId && (
-                <button
-                  className="attention-action"
-                  onClick={() => openOrder(item.orderId!)}
-                  aria-label={`View ${item.title}`}
-                >
-                  {language === "my" ? "စစ်ဆေးရန်" : "Review"}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function ReportTable({
-  range,
-  orders,
-  expenses,
-  language,
-}: {
-  data?: BusinessSnapshot;
-  range: DateRange;
-  orders: OrderDetails[];
-  expenses: Expense[];
-  language: string;
-}) {
-  const exportCsv = () => {
-    const rows = [
-      ["Type", "Description", "Date", "Amount (MMK)"],
-      ...orders.map((order) => ["Order", `#${order.id.slice(0, 8).toUpperCase()} · ${order.customers?.name ?? "Customer"}`, myanmarDate(order.created_at), String(order.total_mmk)]),
-      ...expenses.map((expense) => ["Expense", `${expense.description} (${expense.category})`, expense.expense_date, String(-expense.amount_mmk)]),
-    ];
-    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `tu-tu-twat-finance-${range.from}-to-${range.to}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-  return (
-    <Card>
-      <div className="card-heading">
-        <div>
-          <h2>{language === "my" ? "ဘဏ္ဍာရေး ငွေစာရင်း အသေးစိတ်" : "Detailed Financial Transactions"}</h2>
-          <p className="muted">
-            {range.from} – {range.to}
-          </p>
-        </div>
-        <button type="button" className="auth-secondary" onClick={exportCsv}>
-          {language === "my" ? "CSV ထုတ်ယူရန်" : "Export CSV"}
-        </button>
-      </div>
-      <div className="table-scroll" tabIndex={0} role="region" aria-label="Transaction reports">
-        <table className="data-table business-table">
-          <caption className="sr-only">Orders and expenses in period.</caption>
-          <thead>
-            <tr>
-              <th scope="col">{language === "my" ? "အမျိုးအစား" : "Type"}</th>
-              <th scope="col">{language === "my" ? "အကြောင်းအရာ" : "Description"}</th>
-              <th scope="col">{language === "my" ? "ရက်စွဲ" : "Date"}</th>
-              <th scope="col" className="amount-cell">
-                {language === "my" ? "ပမာဏ" : "Amount"} (MMK)
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td>
-                  <span className="status-badge status-info">{language === "my" ? "အော်ဒါအရောင်း" : "Order"}</span>
-                </td>
-                <td>
-                  #{o.id.slice(0, 8).toUpperCase()} · {o.customers?.name ?? (language === "my" ? "ဝယ်သူ" : "Customer")}
-                </td>
-                <td>{myanmarDate(o.created_at)}</td>
-                <td className="amount-cell font-mono text-success">
-                  <strong>+{formatMmk(o.total_mmk)}</strong>
-                </td>
-              </tr>
-            ))}
-            {expenses.map((e) => (
-              <tr key={e.id}>
-                <td>
-                  <span className="status-badge status-warning">{language === "my" ? "အသုံးစရိတ်" : "Expense"}</span>
-                </td>
-                <td>
-                  {e.description} ({e.category})
-                </td>
-                <td>{e.expense_date}</td>
-                <td className="amount-cell font-mono text-danger">
-                  <strong>-{formatMmk(e.amount_mmk)}</strong>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}

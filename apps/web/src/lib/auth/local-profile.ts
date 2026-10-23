@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getDb, SAMPLE_SHOP_ID } from "../db/sqlite.ts";
+import { getDb } from "../db/sqlite.ts";
 
 export type LocalAuthUser = {
   id: string;

@@ -238,6 +238,7 @@ export function VoucherCard({
   isSavingToShop = false,
   isSavedToShop = false,
   onClose,
+  onNewOrder,
   children,
 }: {
   order: VoucherOrder;
@@ -249,6 +250,7 @@ export function VoucherCard({
   isSavingToShop?: boolean;
   isSavedToShop?: boolean;
   onClose?: () => void;
+  onNewOrder?: () => void;
   children?: React.ReactNode;
 }) {
   const printRef = useRef<HTMLDivElement>(null);
@@ -285,6 +287,21 @@ export function VoucherCard({
           <span>Voucher No: <strong>{orderLabel}</strong></span>
         </div>
         <div className="voucher-toolbar-actions">
+          {onNewOrder && (
+            <button
+              type="button"
+              className="voucher-action-btn new-order-btn"
+              onClick={onNewOrder}
+              title={isBurmese ? "အော်ဒါအသစ် ပြုလုပ်ရန်" : "Start New Order"}
+              aria-label="New Order"
+              style={{ color: "#0284c7" }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          )}
           {onEdit && (
             <button
               type="button"

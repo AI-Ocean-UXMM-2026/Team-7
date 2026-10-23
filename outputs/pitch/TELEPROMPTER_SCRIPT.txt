@@ -1,0 +1,68 @@
+0:00–0:18 — 1 · Opening
+
+Imagine finishing a busy day of selling, then spending your evening figuring out which orders are paid. I’m [name], [role] from Four Hook. We built တူတူတွက်မယ် to help Myanmar online sellers manage that work.
+
+0:18–0:31 — 2 · Opportunity
+
+Social media brings customers to small businesses. But behind each conversation, one seller still has to connect the order, the payment, and the financial record.
+
+0:31–0:47 — 3 · Pain points
+
+Picture a seller receiving an order in Messenger, a payment screenshot later, and a quantity change in another message. Information gets scattered. The day ends with a simple question: how much did I actually earn?
+
+0:47–1:04 — 4 · Research
+
+Our survey of fifty online shoppers found that thirty-four experienced delayed order confirmation, and twenty-seven had to resend payment screenshots. That shows customer friction. Our next validation step is testing the seller’s workflow directly.
+
+1:04–1:18 — 5 · Solution
+
+တူတူတွက်မယ် connects those steps through a floating desktop assistant and a business dashboard. The seller brings in the conversation, reviews the AI’s work, and stays in control. Let me show you.
+
+1:18–1:38 — 6 · Demo: chat
+
+This is a synthetic customer conversation. The customer orders two shirts. I copy the messages and open our dolphin over Messenger. I paste them into Chat to Order, so the seller chooses exactly what to share.
+
+1:38–2:00 — 6 · Demo: review
+
+AI prepares the order details for review. Here, the delivery address is missing. I add it from the customer’s follow-up message, then check the quantity and price. Only after my approval does the order save to the shop.
+
+2:00–2:15 — 6 · Demo: voucher
+
+Now I can show the voucher for that order. The customer details and item total are already there. The seller can review the result without typing the same information into another document.
+
+2:15–2:48 — 6 · Demo: payment
+
+Next, I upload a synthetic payment screenshot. AI extracts the available details, and the app suggests a matching order. I review and attach the evidence, then open Payments on the website. A screenshot alone does not prove money arrived. In this demonstration, I compare it with our prepared sample payment record before confirming.
+
+2:48–3:08 — 6 · Demo: dashboard
+
+Back on the dashboard, we can see the saved order and confirmed payment. Sales, money received, and estimated profit remain separate. With product costs and expenses recorded, the seller gets a clearer picture of the business.
+
+3:08–3:30 — 7 · AI leverage
+
+AI handles the messy language and image inputs. Application rules calculate the money, while the seller approves the business decisions. That combination turns an AI response into a usable workflow, with editable fields and visible review steps.
+
+3:30–3:43 — 8 · Market
+
+Our starting customer is a Myanmar social seller managing orders manually. We propose recruiting pilot shops through seller communities, then measuring repeat use before pursuing our illustrative three-hundred-shop goal.
+
+3:43–4:10 — 9 · Business model
+
+Our proposed model starts free, with Pro at fifteen thousand kyat per month and Team at thirty-five thousand. Three hundred paying Pro shops would represent fifty-four million kyat in annualized revenue. That is a scenario. Pilot conversion, retention, and AI cost per shop will determine whether it works.
+
+4:10–4:25 — 10 · Execution
+
+During this sprint, we built the merchant website and desktop assistant around two AI workflows. Our next validation priorities are order accuracy, time to complete a reviewed order, and sellers’ willingness to pay.
+
+4:25–4:37 — 11 · Differentiation
+
+Our focus is the seller’s daily routine, from a customer conversation to a clear financial record. The floating assistant keeps help close to the work.
+
+4:37–4:47 — 12 · Team
+
+Four Hook combines development, UX, product ownership, and project management. We’re seeking pilot sellers and mentors for our next step.
+
+4:47–4:55 — 13 · Close
+
+တူတူတွက်မယ်. From chat to order, from order to profit. More clarity for the seller. Thank you.
+

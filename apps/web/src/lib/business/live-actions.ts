@@ -2,7 +2,7 @@
 
 import { expenseInputSchema, myanmarDate, uuidSchema, type PaymentRecord } from "@ocean/contracts";
 import { getExpenses, getOrders, getPayments, getShop, saveExpense as repoSaveExpense, getDb } from "@/lib/db";
-import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops } from "@/lib/auth/session";
+import { getCurrentSession, verifyShopMembership, getAuthorizedShopSession } from "@/lib/auth/session";
 import type { BusinessSnapshot } from "./types";
 
 export async function loadLiveBusiness(shop?: string): Promise<{ data?: BusinessSnapshot; error?: string; status?: number }> {
@@ -12,19 +12,12 @@ export async function loadLiveBusiness(shop?: string): Promise<{ data?: Business
       return { error: "Authentication required: Sign in to view workspace.", status: 401 };
     }
 
-    let targetShopId = shop;
-    if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
-      const authorizedShops = getUserAuthorizedShops(session.userId);
-      if (authorizedShops.length === 0) {
-        return { error: "No authorized shop found for this account.", status: 403 };
-      }
-      targetShopId = authorizedShops[0]!.shop_id;
-    }
-
-    const membership = verifyShopMembership(session.userId, targetShopId);
-    if (!membership.authorized) {
+    const authSession = await getAuthorizedShopSession(shop);
+    if (!authSession) {
       return { error: "Authorization denied: You do not have permission to view this shop.", status: 403 };
     }
+
+    const targetShopId = authSession.shop.id;
 
     const shopInfo = getShop(targetShopId);
     const orders = getOrders(targetShopId, undefined, session.userId);

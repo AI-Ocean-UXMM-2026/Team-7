@@ -52,7 +52,14 @@ const CLOSE_AMOUNT_MMK = 1000;
 const MAX_MATCH_CANDIDATES = 20;
 
 function normalize(value: string | null | undefined) {
-  return value?.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase() || null;
+  if (!value) return null;
+  const stripped = value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/gu, "")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleLowerCase();
+  return stripped.replace(/^(?:ဒေါ်|ဦး|ကို|မ|daw|u|ko|ma)\s+/iu, "").trim() || stripped;
 }
 
 function amountRelation(amount: number | null, total: number) {
@@ -131,10 +138,13 @@ export function matchScreenshotOrders(
   const candidates = orders.map((order): ScreenshotCandidate => {
     const relation = amountRelation(evidence.amount_mmk, order.total_mmk);
     const payer = normalize(evidence.payer_name);
+    const payee = normalize((evidence as { payee_name?: string | null }).payee_name);
     const customer = normalize(order.customer_name);
-    const customerRelation = !payer || !customer
+    const customerMatchesPayer = payer && customer && (payer === customer || payer.includes(customer) || customer.includes(payer));
+    const customerMatchesPayee = payee && customer && (payee === customer || payee.includes(customer) || customer.includes(payee));
+    const customerRelation = (!payer && !payee) || !customer
       ? "unavailable" as const
-      : (payer === customer || payer.includes(customer) || customer.includes(payer))
+      : (customerMatchesPayer || customerMatchesPayee)
         ? "match" as const
         : "mismatch" as const;
     const eligible = order.order_status === "confirmed" && ["unpaid", "partially_paid"].includes(order.payment_status);
@@ -143,9 +153,14 @@ export function matchScreenshotOrders(
     else if (relation === "close") reasons.push("The extracted amount is close to the order total and needs seller review.");
     else if (relation === "missing") reasons.push("No readable amount was extracted, so there is no amount match.");
     else reasons.push(`The extracted amount is ${relation} than the order total.`);
-    if (customerRelation === "match") reasons.push("The payer name matches the order customer name.");
-    else if (customerRelation === "mismatch") reasons.push("The payer name does not match the order customer name.");
-    else reasons.push("Customer comparison is unavailable because one name is missing.");
+    if (customerRelation === "match") {
+      if (customerMatchesPayer) reasons.push("The payer name matches the order customer name.");
+      else reasons.push("The payee name matches the order customer name.");
+    } else if (customerRelation === "mismatch") {
+      reasons.push("The receipt name does not match the order customer name.");
+    } else {
+      reasons.push("Customer comparison is unavailable because one name is missing.");
+    }
     reasons.push("Transaction-reference matching is unavailable because orders do not store transaction references.");
     if (!eligible) reasons.push("This order is not eligible for a pending evidence review because its order or payment status is already closed.");
     const duplicate = duplicateStatus(existing, evidence, imageSha256);

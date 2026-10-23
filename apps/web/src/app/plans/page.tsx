@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getCurrentSession, getAuthorizedShopSession } from "@/lib/auth/session";
+import { getAuthorizedShopSession } from "@/lib/auth/session";
 import { PlansView } from "@/components/plans-view";
 
 export const metadata: Metadata = {
@@ -15,7 +15,6 @@ export default async function PlansPage({
   searchParams: Promise<{ shop?: string }>;
 }) {
   const { shop } = await searchParams;
-  const session = await getCurrentSession();
   const authSession = await getAuthorizedShopSession(shop);
 
   const shopName = authSession?.shop?.name || "တူတူတွက်မယ် Shop";

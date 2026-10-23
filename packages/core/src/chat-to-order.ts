@@ -123,11 +123,17 @@ function cleanProductText(text: string): string {
     .replace(/\b(?:hi|hello|hey|good day|good morning|good evening)\b/giu, " ")
     // Strip conversational pronouns & honorifics
     .replace(/(?:အစ်မ|အမ|အစ်ကို|အကို|ညီမလေး|ညီမ|ညီလေး|မမ|bro|sis)\b/giu, " ")
+    // Strip customer name markers
+    .replace(/(?:^|\s)(?:နာမည်|အမည်|ဖောက်သည်|ဝယ်သူ)\s*[-:#：=]?\s*([^\s,၊။]+)/gu, " ")
     // Strip request phrases & intent verbs
     .replace(/(?:မှာယူပါမယ်|မှာယူမယ်နော်|မှာယူမယ်|မှာပါမယ်|မှာမယ်|ယူပါမယ်|ယူမယ်နော်|ယူမယ်|လိုချင်လို့ပါ|လိုချင်ပါမယ်|လိုချင်တယ်|လိုချင်|ရမလားရှင့်|ရမလားခင်ဗျ|ရမလား|ရပါသလား|ရှိသေးလားရှင့်|ရှိသေးလားခင်ဗျ|ရှိသေးလား|အားပေးမယ်|အားပေးပါမယ်)/gu, " ")
     .replace(/\b(?:can i get|could i get|can i order|i want to buy|i would like to buy|i would like|i want|i need|order|please send|give me|buy|get|take|please)\b/giu, " ")
-    // Strip delivery words
+    // Strip delivery phrases
     .replace(/(?:ပို့ပေးပါနော်|ပို့ပေးပါရှင့်|ပို့ပေးပါခင်ဗျ|ပို့ပေးပါဦး|ပို့ပေးပါ|ပို့ပေး|ကိုပို့)/gu, " ")
+    // Strip address keywords and townships
+    .replace(/(?:အမှတ်\s*[0-9၀-၉\w-]+|တိုက်\s*[0-9၀-၉\w-]+|အခန်း\s*[0-9၀-၉\w-]+|\S+လမ်း|\S+ရပ်ကွက်|\S+မြို့နယ်|ရန်ကုန်|မန္တလေး|နေပြည်တော်|တောင်ကြီး|မော်လမြိုင်|ဗဟိုလမ်း|ပြည်လမ်း|ကမာရွတ်|စမ်းချောင်း|လှိုင်|ဗဟန်း|တာမွေ|သင်္ဃန်းကျွန်း|ရန်ကင်း|အင်းစိန်)/gu, " ")
+    // Strip telephone numbers
+    .replace(/(?:\+?95|09|၀၉)[\d၀-၉\s-]{6,18}/gu, " ")
     // Strip polite particles & thanks
     .replace(/(?:ပါရှင့်|ပါခင်ဗျာ|ပါခင်ဗျ|ပါနော်|နော်|ရှင့်|ခင်ဗျာ|ခင်ဗျ|ပါ|ကျေးဇူးတင်ပါတယ်|ကျေးဇူးပါ|ကျေးဇူးပြု၍)/gu, " ")
     .replace(/\b(?:thanks|thank you|plz)\b/giu, " ")
@@ -135,8 +141,9 @@ function cleanProductText(text: string): string {
     .replace(/\b(?:at|for)\s+[0-9၀-၉,\s]+(?:mmk|kyats?|ကျပ်)?(?:\s+each)?\b/giu, " ")
     .replace(/[0-9၀-၉,\s]+\s*(?:mmk|kyats?|ကျပ်|ကျပ်သား)/giu, " ")
     .replace(/\b(?:at|for)\b.*$/iu, " ")
-    // Strip explicit item prefixes
+    // Strip explicit item and quantity prefixes
     .replace(/^\s*(?:item|product|ပစ္စည်း|ပစ္စည်းအမည်)\s*[-:#：=]?\s*/iu, "")
+    .replace(/(?:အရေအတွက်|quantity|qty)\s*[-:#：=]?\s*[0-9၀-၉a-zA-Z\s]+/giu, " ")
     .replace(/\b(?:each|per)\s+/giu, " ")
     .replace(/(?:တစ်လုံး|တစ်ခု|တစ်ထည်|တစ်ဘူး|တစ်စုံ|တစ်ထုပ်|တစ်တွဲ)\s*/gu, " ")
     .replace(/(?:\s+)(?:လုံး|ခု|ထည်|ဘူး|စုံ|ထုပ်)(?=\s|$)/gu, " ")
@@ -156,10 +163,11 @@ function productFromSegment(segment: string) {
 }
 
 function isMetadataLine(value: string) {
-  return /^(?:customer|name|buyer|recipient|phone|mobile|tel|address|delivery address|shipping address|note|notes)\s*[-:#：=]?/iu.test(value)
-    || /^(?:အမည်|နာမည်|ဖုန်း|လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့မယ့်လိပ်စာ|မှတ်ချက်)\s*[-:#：=]?/u.test(value)
+  return /^(?:customer|name|buyer|recipient|phone|mobile|tel|address|delivery address|shipping address|note|notes|qty|quantity|အရေအတွက်)\s*[-:#：=]?/iu.test(value)
+    || /^(?:အမည်|နာမည်|ဖုန်း|ဖုန်းနံပါတ်|လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့မယ့်လိပ်စာ|မှတ်ချက်)\s*[-:#：=]?/u.test(value)
     || /(?:ကို\s*ပို့|ပို့ပေး|cod|cash on delivery|delivery fee|ပို့ခ|ငွေလွှဲ|payment)/iu.test(value)
-    || /^(?:\+?95|09|၀၉)[\d၀-၉\s-]{6,18}$/u.test(value);
+    || /^(?:\+?95|09|၀၉)[\d၀-၉\s-]{6,18}$/u.test(value)
+    || /^(?:ရန်ကုန်|မန္တလေး|စမ်းချောင်း|ကမာရွတ်|လှိုင်|ဗဟိုလမ်း|ပြည်လမ်း|အမှတ်\s*[0-9၀-၉])/u.test(value);
 }
 
 function productSegmentFrom(value: string) {
@@ -172,6 +180,31 @@ function productSegmentFrom(value: string) {
 
 function extractItems(chat: string): ChatOrderExtractionItem[] {
   const items: ChatOrderExtractionItem[] = [];
+  const lines = chat.split(/\r?\n|;/gu).map(l => l.trim()).filter(Boolean);
+
+  // Check for explicit template Item / ပစ္စည်း line
+  const explicitItemLines = lines.filter(l => /^(?:item|product|ပစ္စည်း|ပစ္စည်းအမည်)\s*[-:#：=]/iu.test(l));
+  const explicitQtyLine = lines.find(l => /^(?:qty|quantity|အရေအတွက်)\s*[-:#：=]/iu.test(l));
+  const templateQuantity = explicitQtyLine ? extractQuantity(explicitQtyLine.replace(/^(?:qty|quantity|အရေအတွက်)\s*[-:#：=]?\s*/iu, "")) : null;
+
+  if (explicitItemLines.length > 0) {
+    for (const itemLine of explicitItemLines) {
+      const cleanLine = itemLine.replace(/^(?:item|product|ပစ္စည်း|ပစ္စည်းအမည်)\s*[-:#：=]?\s*/iu, "");
+      const lineQty = extractQuantity(cleanLine);
+      const name = productFromSegment(cleanLine);
+      const priceMatch = cleanLine.match(/([0-9၀-၉][0-9၀-၉,\s]{0,20})\s*(?:mmk|kyats?|ကျပ်|ကျပ်သား)/iu);
+      const linePrice = priceMatch ? parseAmount(priceMatch[1]) : null;
+      if (name) {
+        items.push({
+          product_name: name,
+          quantity: lineQty.value ?? templateQuantity?.value ?? null,
+          unit_price_mmk: linePrice,
+        });
+      }
+    }
+    if (items.length > 0) return items;
+  }
+
   const pricePattern = /([0-9၀-၉][0-9၀-၉,\s]{0,20})\s*(?:mmk|kyats?|ကျပ်|ကျပ်သား)/giu;
   let match: RegExpExecArray | null;
   let cursor = 0;
@@ -193,7 +226,6 @@ function extractItems(chat: string): ChatOrderExtractionItem[] {
 
   // Second pass: if no priced items found or multiple lines exist without price
   if (items.length === 0) {
-    const lines = chat.split(/\r?\n|;|\s+(?:and|နှင့်|နဲ့)\s+/giu).map(l => l.trim()).filter(Boolean);
     const productLines = lines.filter(l => !isMetadataLine(l));
     for (const line of productLines) {
       const q = extractQuantity(line);
@@ -218,41 +250,50 @@ function extractItems(chat: string): ChatOrderExtractionItem[] {
 }
 
 function extractCustomer(chat: string) {
+  const labeled = chat.match(/(?:^|\n)\s*(?:customer\s*name|customer|name|buyer|recipient|အမည်|နာမည်|ဖောက်သည်အမည်)\s*[-–—:#：=]?\s*([^\n၊။,]{1,160})/iu);
+  if (labeled) return clean(labeled[1]?.replace(/ပါ$/u, ""));
   const sender = chat.match(/^\s*([A-Za-z\u1000-\u109F][A-Za-z\u1000-\u109F .'’-]{1,159})\s*:\s*/u);
   const senderName = sender?.[1];
   if (senderName && !/^(?:phone|address|note|notes|name|customer|အမည်|နာမည်|ဖုန်း|လိပ်စာ|မှတ်ချက်)$/iu.test(senderName)) return clean(senderName);
-  const english = chat.match(/(?:^|\n)\s*(?:customer|customer name|name|buyer|recipient)\s*(?:[-–—:#：=]|is)?\s*([A-Za-z][A-Za-z .'’-]{1,159}?)(?=\.|,|\n|\s+(?:phone|deliver|address|note)\b|$)/imu)
-    ?? chat.match(/\b(?:my\s+name\s+is|i\s+am|i['’]m)\s+([A-Za-z][A-Za-z .'’-]{1,159}?)(?=\.|,|\n|\s+(?:phone|deliver|address|note)\b|$)/iu);
+  const english = chat.match(/\b(?:my\s+name\s+is|i\s+am|i['’]m)\s+([A-Za-z][A-Za-z .'’-]{1,159}?)(?=\.|,|\n|\s+(?:phone|deliver|address|note)\b|$)/iu);
   if (english) return clean(english[1]);
-  const burmese = chat.match(/(?:^|\n)\s*(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：=])?\s*([^၊။\n,]{1,160})/u)
-    ?? chat.match(/(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：=])?\s*([^၊။\n,]{1,160})/u);
+  const burmese = chat.match(/(?:နာမည်|အမည်|ဖောက်သည်အမည်)\s*(?:က|မှာ|[-–—:#：=])?\s*([^၊။\n,]{1,160})/u);
   if (burmese) return clean(burmese?.[1]?.replace(/ပါ$/u, ""));
   // Match Burmese honorific names e.g. ဒေါ်အေးအေး, မဆုဆု, ကိုမျိုး, ဦးအောင်
   const honorific = chat.match(/(?:^|\n|\s)(?:ဒေါ်|ဦး|ကို|မ)\s*([A-Za-z\u1000-\u102A\u103B-\u1049]{2,30})/u);
-  if (honorific && !/^(?:မင်္ဂလာ|မရှိ|မရ|မပို့|မလုပ်)/u.test(honorific[0].trim())) {
+  if (honorific && !/^(?:မင်္ဂလာ|မရှိ|မရ|မပို့|မလုပ်|မပေး|မသိ)/u.test(honorific[0].trim())) {
     return clean(honorific[0].trim());
   }
   return null;
 }
 
 function extractPhone(chat: string) {
+  const labeled = chat.match(/(?:^|\n|\s)(?:phone\s*number|phone|mobile|tel|ဖုန်းနံပါတ်|ဖုန်း)\s*[-–—:#：=]?\s*([+0-9၀-၉\s-]{7,25})/iu);
   const matches = [...chat.matchAll(/(?:\+?95\s*9|09|၀၉)[\d၀-၉\s-]{6,18}/gu)];
-  if (matches.length === 0) return null;
-  const phones = matches
-    .map((m) => normalizeDigits(m[0]).replace(/[\s-]+/g, " ").trim())
-    .filter((p) => p.length >= 8);
-  const unique = [...new Set(phones)];
+  const allPhones: string[] = [];
+  if (labeled && labeled[1]) {
+    const norm = normalizeDigits(labeled[1]).replace(/[\s-]+/g, " ").trim();
+    if (norm.replace(/\D/g, "").length >= 7) allPhones.push(norm);
+  }
+  for (const m of matches) {
+    const norm = normalizeDigits(m[0]).replace(/[\s-]+/g, " ").trim();
+    if (norm.replace(/\D/g, "").length >= 7) allPhones.push(norm);
+  }
+  const unique = [...new Set(allPhones)];
   return unique.length > 0 ? unique.join(" / ") : null;
 }
 
 function extractAddress(chat: string) {
-  const english = chat.match(/\b(?:deliver|ship|send)\s+(?:to|at)\s+(.+?)(?=\.|\n|\s+(?:name|phone|note|cod)\b|$)/iu)
-    ?? chat.match(/(?:^|\n)\s*(?:address|delivery address|shipping address)\s*[-–—:#：=]?\s*([^\n။]+?)(?=\n|$)/imu);
-  if (english) return clean(english[1]);
-  const labeled = chat.match(/(?:^|\n)\s*(?:လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့ရမည့်လိပ်စာ|ပို့မယ့်လိပ်စာ|ပို့မည့်လိပ်စာ)\s*[-–—:#：=]?\s*([^\n။]+)/u);
+  const labeled = chat.match(/(?:^|\n)\s*(?:delivery\s*address|shipping\s*address|address|လိပ်စာ|ပို့ရမယ့်လိပ်စာ|ပို့ရမည့်လိပ်စာ|ပို့မယ့်လိပ်စာ|ပို့မည့်လိပ်စာ)\s*[-–—:#：=]?\s*([^\n။]+)/iu);
   if (labeled) return clean(labeled[1]);
+  const english = chat.match(/\b(?:deliver|ship|send)\s+(?:to|at)\s+(.+?)(?=\.|\n|\s+(?:name|phone|note|cod)\b|$)/iu);
+  if (english) return clean(english[1]);
   const burmese = chat.match(/([^\n။]+?)\s*ကို\s*ပို့(?:ပေး)?(?:ပါ)?/u);
-  return clean(burmese?.[1]);
+  if (burmese) return clean(burmese?.[1]);
+  // Match address tokens in sentence: e.g. ရန်ကုန် စမ်းချောင်း အမှတ် ၁၂
+  const sentenceAddr = chat.match(/((?:အမှတ်|တိုက်|အခန်း|လမ်း|ရပ်ကွက်|မြို့နယ်|ရန်ကုန်|မန္တလေး)[^၊။\n]+?(?:မြို့နယ်|ရန်ကုန်|မန္တလေး|နေပြည်တော်|သို့|ကို|\s))/u);
+  if (sentenceAddr) return clean(sentenceAddr[1]);
+  return null;
 }
 
 function extractNotes(chat: string) {

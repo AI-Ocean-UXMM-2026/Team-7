@@ -1,6 +1,6 @@
 import { saveOrder } from "@/app/sales/actions";
 import { NextResponse } from "next/server";
-import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops } from "@/lib/auth/session";
+import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops, getAuthorizedShopSession } from "@/lib/auth/session";
 import { getOrders } from "@/lib/db";
 import { uuidSchema } from "@ocean/contracts";
 
@@ -12,20 +12,12 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    let targetShopId = searchParams.get("shop");
-
-    if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
-      const authorizedShops = getUserAuthorizedShops(session.userId);
-      if (authorizedShops.length === 0) {
-        return NextResponse.json({ error: "No authorized shop found" }, { status: 403 });
-      }
-      targetShopId = authorizedShops[0]!.shop_id;
+    const requestedShop = searchParams.get("shop");
+    const authSession = await getAuthorizedShopSession(requestedShop || undefined);
+    if (!authSession) {
+      return NextResponse.json({ error: "No authorized shop found" }, { status: 403 });
     }
-
-    const membership = verifyShopMembership(session.userId, targetShopId);
-    if (!membership.authorized) {
-      return NextResponse.json({ error: "Authorization denied" }, { status: 403 });
-    }
+    const targetShopId = authSession.shop.id;
 
     const query = searchParams.get("q")?.toLowerCase();
     const status = searchParams.get("status");

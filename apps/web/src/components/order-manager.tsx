@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, Icon } from "@ocean/ui";
 import { calculateOrderTotals, fulfillmentStatusSchema, orderStatusSchema, saveOrderSchema, type OrderDetails, type SaveOrderInput } from "@ocean/contracts";
 import { loadOrders, saveOrder, type OrdersResult } from "@/app/sales/actions";
@@ -45,7 +45,7 @@ function OrderManagerView({ shopId, initial, initialQuery, initialOrderId }: Ord
   const [sort, setSort] = useState("newest");
   const [selected, setSelected] = useState<OrderDetails | "new" | null>(() => initial.orders?.find(order => order.id === initialOrderId) ?? null);
   const [notice, setNotice] = useState("");
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const result = await loadOrders(shopId);
@@ -53,7 +53,29 @@ function OrderManagerView({ shopId, initial, initialQuery, initialOrderId }: Ord
       if (result.orders) setOrders(result.orders);
     } catch { setError(language === "my" ? "အော်ဒါစာရင်း ရယူ၍ မရနိုင်ပါ။ ထပ်မံကြိုးစားပါ။" : "Orders could not be loaded. Please retry."); }
     finally { setLoading(false); }
-  };
+  }, [shopId, language]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refresh();
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "salesayar_orders_updated") {
+        void refresh();
+      }
+    };
+    const onFocus = () => {
+      void refresh();
+    };
+    window.addEventListener("refresh-orders", onRefresh);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("refresh-orders", onRefresh);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refresh]);
   const rows = orders.slice(0, 500).filter(order =>
     `${order.id} ${order.customers?.name ?? ""} ${order.customers?.phone ?? ""} ${order.order_items.map(i => i.product_name).join(" ")}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) &&
     (!status || order.order_status === status) && (!payment || order.payment_status === payment) && (!fulfillment || order.fulfillment_status === fulfillment)

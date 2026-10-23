@@ -5464,6 +5464,55 @@ html,
   align-items: center;
   gap: 6px;
 }
+.assistant-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.assistant-lang-switch .lang-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  line-height: 1;
+}
+.assistant-lang-switch .lang-btn.active {
+  background: #ffffff;
+  color: #172c78;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.assistant-lang-switch .lang-btn:hover:not(.active) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+}
+.template-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.template-chip-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
 .header-home-btn {
   width: 34px;
   height: 34px;
@@ -7394,7 +7443,7 @@ html {
    compact search, and tactile 3D controls.
    ========================================================================== */
 
-/* Eliminate persistent sidebar across desktop, zero out workspace margin */
+/* Hide sidebar for top navigation bar */
 .sidebar {
   display: none !important;
 }
@@ -7402,6 +7451,7 @@ html {
 .workspace {
   margin-left: 0 !important;
   width: 100% !important;
+  max-width: 100vw !important;
 }
 
 .topbar {

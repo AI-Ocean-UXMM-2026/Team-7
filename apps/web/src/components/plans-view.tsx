@@ -75,7 +75,7 @@ const teamPlan: PlanItem = {
 const plans: PlanItem[] = [freePlan, proPlan, teamPlan];
 
 export function PlansView({
-  shopId,
+  shopId: _shopId,
   shopName,
 }: {
   shopId?: string;

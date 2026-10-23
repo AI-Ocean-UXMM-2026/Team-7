@@ -48,6 +48,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  const homeHref = pathname === "/demo" ? "/demo" : "/";
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -57,24 +59,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="workspace">
         <header className="topbar">
           <div className="topbar-left-zone">
-            <Suspense fallback={
-              <Link href="/" className="topbar-logo-btn" aria-label="Home">
-                <Image className="topbar-dolphin-img" src={dolphin} alt="Logo" width={38} height={38} priority />
-              </Link>
-            }>
-              <ShopAwareHomeLink className="topbar-logo-btn" aria-label="Home">
-                <Image className="topbar-dolphin-img" src={dolphin} alt="Logo" width={38} height={38} priority />
-              </ShopAwareHomeLink>
-            </Suspense>
+            <Link href={homeHref} className="topbar-logo-btn" aria-label="တူတူတွက်မယ် - Home">
+              <Image
+                src={dolphin}
+                alt="တူတူတွက်မယ် Dolphin Accountant"
+                width={36}
+                height={36}
+                className="topbar-dolphin-img"
+                priority
+              />
+            </Link>
 
-            <nav className="topbar-nav" aria-label="Primary navigation">
-              <Suspense fallback={<TopNavigationItems pathname={pathname} language={language} />}>
+            <nav className="topbar-nav" aria-label="Main Navigation">
+              <Suspense fallback={null}>
                 <SourceTopNavigation pathname={pathname} language={language} />
               </Suspense>
             </nav>
           </div>
 
-          <div className="topbar-right-zone">
+          <div className="topbar-search-zone">
             {pathname === "/demo" ? (
               <span className="demo-shell-context">Synthetic sample dashboard</span>
             ) : (
@@ -82,11 +85,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <ShopSearch />
               </Suspense>
             )}
-            <div className="topbar-right-controls">
-              <Suspense fallback={null}>
-                <TopbarControls pathname={pathname} language={language} />
-              </Suspense>
-            </div>
+          </div>
+
+          <div className="topbar-right-controls">
+            <Suspense fallback={null}>
+              <TopbarControls pathname={pathname} language={language} />
+            </Suspense>
           </div>
         </header>
 
@@ -125,33 +129,7 @@ function SearchFallback() {
   );
 }
 
-function ShopAwareHomeLink({
-  className,
-  children,
-  "aria-label": ariaLabel,
-}: {
-  className: string;
-  children: React.ReactNode;
-  "aria-label"?: string;
-}) {
-  const params = useSearchParams();
-  const shop = params.get("shop");
-  const href = shop && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shop)
-    ? `/?shop=${encodeURIComponent(shop)}`
-    : "/";
-  return <Link href={href} className={className} aria-label={ariaLabel}>{children}</Link>;
-}
 
-function WorkspaceSwitchLink({ pathname, label }: { pathname: string; label: string }) {
-  const params = useSearchParams();
-  const href = createWorkspaceSwitcherHref(pathname, new URLSearchParams(params.toString()));
-  return (
-    <Link className="sidebar-workspace-link" href={href} aria-label={label}>
-      <Icon name="home" />
-      <span className="sidebar-label">{label}</span>
-    </Link>
-  );
-}
 
 function ShopSearch() {
   const params = useSearchParams();
@@ -254,7 +232,7 @@ function TopbarControls({ pathname, language }: { pathname: string; language: Sh
       <button
         type="button"
         className="topbar-new-order-btn"
-        onClick={() => window.dispatchEvent(new CustomEvent("open-saya-assistant", { detail: { view: "chat" } }))}
+        onClick={() => window.dispatchEvent(new CustomEvent("open-saya-assistant", { detail: { view: "chat", reset: true } }))}
         aria-label={labels.newOrder}
       >
         {labels.newOrder}

@@ -23,6 +23,57 @@ import { VoucherCard, type VoucherOrder } from "./VoucherModal";
 
 type View = "home" | "chat" | "match";
 
+const ASSISTANT_STRINGS = {
+  en: {
+    title: "တူတူတွက်မယ်",
+    subtitle: "YOUR SELLER ASSISTANT",
+    chatToOrder: "Chat to Order",
+    chatToOrderDesc: "Turn customer messages into instant vouchers",
+    matchPayment: "Match Payment to Order",
+    matchPaymentDesc: "Verify transaction slip & connect order",
+    backHome: "Back to home",
+    openWorkspace: "Open workspace ↗",
+    pasteFromClipboard: "📋 Paste from clipboard",
+    writeOrder: "✏️ Write order",
+    useTemplate: "✨ Use Template",
+    templateNotice: "Template inserted! Fill in the customer details.",
+    writePlaceholderNew: "Type customer conversation or order details (e.g. Daw Aye Aye, 09777222111, Kamayut, Lipstick 2 pcs 25000 kyat)…",
+    writePlaceholderAppend: "Type new message or additional details (e.g. Daw Aye Aye, 09777222111, Kamayut)…",
+    generateVoucher: "Generate Voucher",
+    generating: "Generating voucher…",
+    updateVoucher: "Update Voucher with New Message",
+    pasteTitle: "Paste Customer Order",
+    pasteDesc: "Copy customer chat from Facebook or TikTok, then click here to generate voucher.",
+    pasteButton: "📋 Paste & Generate Voucher",
+    analyzing: "Analyzing & Generating Voucher…",
+    newOrder: "+ New Order",
+  },
+  my: {
+    title: "တူတူတွက်မယ်",
+    subtitle: "အရောင်းအထောက်အကူ",
+    chatToOrder: "ချက်တင်မှ ဘောက်ချာထုတ်ရန်",
+    chatToOrderDesc: "ဖောက်သည်စကားပြောချက်များမှ ချက်ချင်းဘောက်ချာထုတ်ယူပါ",
+    matchPayment: "ငွေလွှဲစလစ်နှင့် အော်ဒါတိုက်ဆိုင်စစ်ဆေးရန်",
+    matchPaymentDesc: "ငွေလွှဲပြေစာကို အတည်ပြုပြီး အော်ဒါနှင့် တွဲဆက်ပါ",
+    backHome: "မူလစာမျက်နှာသို့",
+    openWorkspace: "အရောင်းစနစ်ဖွင့်ရန် ↗",
+    pasteFromClipboard: "📋 ကလစ်ဘုတ်မှ ကူးယူထည့်ရန်",
+    writeOrder: "✏️ စာရိုက်ထည့်ရန်",
+    useTemplate: "✨ ပုံစံထည့်ရန်",
+    templateNotice: "အော်ဒါပုံစံ ထည့်သွင်းပြီးပါပြီ။ အချက်အလက်များ ဖြည့်စွက်ပေးပါ။",
+    writePlaceholderNew: "ဖောက်သည်ပြောကြားချက် သို့မဟုတ် အော်ဒါအချက်အလက် ရိုက်ထည့်ပါ (ဥပမာ - ဒေါ်အေးအေး၊ ၀၉၇၇၇၂၂၂၁၁၁၊ ကမာရွတ်၊ နှုတ်ခမ်းနီ ၂ ခု ၂၅၀၀၀ ကျပ်)...",
+    writePlaceholderAppend: "ဖြည့်စွက်အချက်အလက် သို့မဟုတ် မက်ဆေ့ခ်ျအသစ် ရိုက်ထည့်ပါ...",
+    generateVoucher: "ဘောက်ချာထုတ်ရန်",
+    generating: "ဘောက်ချာထုတ်နေပါသည်...",
+    updateVoucher: "မက်ဆေ့ခ်ျအသစ်ဖြင့် ဘောက်ချာပြင်ဆင်ရန်",
+    pasteTitle: "ဖောက်သည်အော်ဒါ ကူးယူထည့်ရန်",
+    pasteDesc: "Facebook သို့မဟုတ် TikTok မှ ဖောက်သည်ပြောကြားချက်ကို copy ကူးပြီး ဤနေရာတွင် နှိပ်၍ ဘောက်ချာထုတ်ပါ",
+    pasteButton: "📋 စာကူးယူပြီး ဘောက်ချာထုတ်မည်",
+    analyzing: "အချက်အလက်စစ်ဆေးပြီး ဘောက်ချာထုတ်နေပါသည်...",
+    newOrder: "+ အော်ဒါအသစ်",
+  },
+};
+
 const defaultFields: AssistantDraftFields = {
   view: "home",
   chat: "",
@@ -40,6 +91,23 @@ function SourceTag({ source }: { source: FieldSource }) {
 }
 
 function AssistantPanel() {
+  const [language, setLanguageState] = useState<"en" | "my">(() => {
+    try {
+      return (localStorage.getItem("salesayar_assistant_lang") as "en" | "my") || "my";
+    } catch {
+      return "my";
+    }
+  });
+
+  const setLanguage = (lang: "en" | "my") => {
+    setLanguageState(lang);
+    try {
+      localStorage.setItem("salesayar_assistant_lang", lang);
+    } catch {}
+  };
+
+  const t = ASSISTANT_STRINGS[language] || ASSISTANT_STRINGS.en;
+
   const [view, setView] = useState<View>(defaultFields.view);
   const [chat, setChat] = useState(defaultFields.chat);
   const [order, setOrder] = useState<EditableChatOrder>(() => emptyEditableOrder());
@@ -70,6 +138,28 @@ function AssistantPanel() {
   const [showEditForm, setShowEditForm] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const burmeseTemplate = "အမည်- \nလိပ်စာ- \nဖုန်းနံပါတ်- \nပစ္စည်း- \nအရေအတွက်- ";
+  const englishTemplate = "Name- \nAddress- \nPhone number- \nItem- \nQuantity- ";
+
+  function applyTemplate() {
+    const tpl = language === "my" ? burmeseTemplate : englishTemplate;
+    setChat(tpl);
+    setChatInputMode("write");
+    setNotice(t.templateNotice);
+  }
+
+  const resetOrderState = useCallback(() => {
+    setChat("");
+    setHasOrder(false);
+    setConfirmed(false);
+    setSavedOrder(null);
+    setOrderId(null);
+    orderIdRef.current = null;
+    setOrder(emptyEditableOrder());
+    setShowEditForm(false);
+    setNotice(language === "my" ? "အော်ဒါအသစ်အတွက် အဆင်သင့်ဖြစ်ပါပြီ" : "Ready for new order.");
+  }, [language]);
 
   const refreshShopContext = useCallback(async () => {
     try {
@@ -500,22 +590,40 @@ function AssistantPanel() {
 
   return (
     <main className="assistant-shell">
-      {/* Header with Mini Home Icon */}
+      {/* Header with Mini Home Icon and Language Switcher */}
       <header className="panel-header">
         <div className="header-drag" aria-hidden="true">
           <span className="panel-mark">
             <img src={dolphin} alt="" />
           </span>
           <span className="title-copy">
-            <strong>တူတူတွက်မယ်</strong>
-            <small>YOUR SELLER ASSISTANT</small>
+            <strong>{t.title}</strong>
+            <small>{t.subtitle}</small>
           </span>
         </div>
         <div className="window-actions">
+          <div className="assistant-lang-switch" role="group" aria-label="Assistant Language">
+            <button
+              type="button"
+              className={`lang-btn ${language === "en" ? "active" : ""}`}
+              onClick={() => setLanguage("en")}
+              title="Switch to English"
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              className={`lang-btn ${language === "my" ? "active" : ""}`}
+              onClick={() => setLanguage("my")}
+              title="မြန်မာဘာသာသို့ ပြောင်းရန်"
+            >
+              မြန်မာ
+            </button>
+          </div>
           <button
             type="button"
             className="header-home-btn"
-            title="Open တူတူတွက်မယ် workspace in browser"
+            title="Open workspace"
             aria-label="Open workspace"
             onClick={() => void window.assistant.openWebsite()}
           >
@@ -540,7 +648,7 @@ function AssistantPanel() {
         </div>
       </header>
 
-      <div className="panel-scroll">
+      <div className="panel-scroll view-enter-anim" key={view}>
         {view === "home" ? (
           <>
             {/* Mobbin-inspired Clean Hero */}
@@ -549,8 +657,8 @@ function AssistantPanel() {
                 <span className="welcome-ripple" />
                 <img src={dolphin} alt="တူတူတွက်မယ်" />
               </div>
-              <h1 className="home-title">တူတူတွက်မယ်</h1>
-              <p className="home-subtitle">Your Seller Assistant</p>
+              <h1 className="home-title">{t.title}</h1>
+              <p className="home-subtitle">{t.subtitle}</p>
             </section>
 
             {/* Two Clean Functions without text clutter */}
@@ -567,8 +675,8 @@ function AssistantPanel() {
                   <Icon name="sales" size={24} />
                 </div>
                 <div className="clean-action-text">
-                  <strong>Chat to Order</strong>
-                  <span>Turn customer messages into instant vouchers</span>
+                  <strong>{t.chatToOrder}</strong>
+                  <span>{t.chatToOrderDesc}</span>
                 </div>
                 <span className="action-arrow">→</span>
               </button>
@@ -585,8 +693,8 @@ function AssistantPanel() {
                   <Icon name="wallet" size={24} />
                 </div>
                 <div className="clean-action-text">
-                  <strong>Match Payment to Order</strong>
-                  <span>Verify transaction slip & connect order</span>
+                  <strong>{t.matchPayment}</strong>
+                  <span>{t.matchPaymentDesc}</span>
                 </div>
                 <span className="action-arrow">→</span>
               </button>
@@ -707,7 +815,7 @@ function AssistantPanel() {
                   setNotice("");
                 }}
               >
-                <span aria-hidden="true">←</span> Back to home
+                <span aria-hidden="true">←</span> {t.backHome}
               </button>
               <button
                 type="button"
@@ -715,7 +823,7 @@ function AssistantPanel() {
                 title="Open တူတူတွက်မယ် workspace"
                 onClick={() => void window.assistant.openWebsite()}
               >
-                <Icon name="home" size={14} /> Open workspace ↗
+                <Icon name="home" size={14} /> {t.openWorkspace}
               </button>
             </div>
 
@@ -723,23 +831,33 @@ function AssistantPanel() {
               <section className="workflow" aria-label="Chat to Order">
 
                 {/* Mode Options: Paste from clipboard vs Write order */}
-                <div className="chat-mode-tabs">
+                <div className="chat-mode-tabs" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      type="button"
+                      className={`mode-tab-btn ${chatInputMode === "paste" ? "active" : ""}`}
+                      onClick={() => {
+                        setChatInputMode("paste");
+                        void handlePasteAndGenerate();
+                      }}
+                    >
+                      {t.pasteFromClipboard}
+                    </button>
+                    <button
+                      type="button"
+                      className={`mode-tab-btn ${chatInputMode === "write" ? "active" : ""}`}
+                      onClick={() => setChatInputMode("write")}
+                    >
+                      {t.writeOrder}
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    className={`mode-tab-btn ${chatInputMode === "paste" ? "active" : ""}`}
-                    onClick={() => {
-                      setChatInputMode("paste");
-                      void handlePasteAndGenerate();
-                    }}
+                    className="template-chip-btn"
+                    onClick={applyTemplate}
+                    title={language === "my" ? "အော်ဒါပုံစံ အလိုအလျောက် ထည့်သွင်းရန်" : "Insert order quick template"}
                   >
-                    📋 Paste from clipboard
-                  </button>
-                  <button
-                    type="button"
-                    className={`mode-tab-btn ${chatInputMode === "write" ? "active" : ""}`}
-                    onClick={() => setChatInputMode("write")}
-                  >
-                    ✏️ Write order
+                    {t.useTemplate}
                   </button>
                 </div>
 
@@ -753,11 +871,7 @@ function AssistantPanel() {
                       maxLength={20_000}
                       rows={hasOrder ? 3 : 4}
                       onChange={(event) => setChat(event.target.value)}
-                      placeholder={
-                        hasOrder
-                          ? "Type new message or additional details (e.g. Daw Aye Aye, 09777222111, Kamayut)…"
-                          : "Type customer conversation or order details (e.g. Daw Aye Aye, 09777222111, Kamayut, Lipstick 2 pcs 25000 kyat)…"
-                      }
+                      placeholder={hasOrder ? t.writePlaceholderAppend : t.writePlaceholderNew}
                     />
                     <div style={{ marginTop: "6px", display: "flex", gap: "8px" }}>
                       <button
@@ -768,25 +882,19 @@ function AssistantPanel() {
                         onClick={() => void generateOrderFromText(chat)}
                       >
                         {isExtracting
-                          ? "Generating voucher…"
+                          ? t.generating
                           : hasOrder
-                          ? "Update Voucher with New Message"
-                          : "Generate Voucher"}
+                          ? t.updateVoucher
+                          : t.generateVoucher}
                       </button>
                       {hasOrder && (
                         <button
                           type="button"
                           className="secondary-button"
-                          title="Clear and start new voucher"
-                          onClick={() => {
-                            setChat("");
-                            setHasOrder(false);
-                            setConfirmed(false);
-                            setSavedOrder(null);
-                            setOrder(emptyEditableOrder());
-                          }}
+                          title={language === "my" ? "ရှင်းလင်းပြီး အော်ဒါအသစ် စတင်ရန်" : "Clear and start new voucher"}
+                          onClick={resetOrderState}
                         >
-                          + New
+                          {t.newOrder}
                         </button>
                       )}
                     </div>
@@ -813,9 +921,9 @@ function AssistantPanel() {
                           <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
                         </svg>
                       </div>
-                      <strong className="paste-card-title">Paste Customer Order</strong>
+                      <strong className="paste-card-title">{t.pasteTitle}</strong>
                       <p className="paste-card-desc">
-                        Copy customer chat from Facebook or TikTok, then click here to generate voucher.
+                        {t.pasteDesc}
                       </p>
                       <button
                         type="button"
@@ -826,8 +934,20 @@ function AssistantPanel() {
                           void handlePasteAndGenerate();
                         }}
                       >
-                        {isExtracting ? "Analyzing & Generating Voucher…" : "📋 Paste & Generate Voucher"}
+                        {isExtracting ? t.analyzing : t.pasteButton}
                       </button>
+                      <div style={{ marginTop: "12px", textAlign: "center" }}>
+                        <button
+                          type="button"
+                          className="template-chip-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            applyTemplate();
+                          }}
+                        >
+                          {t.useTemplate}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -841,6 +961,7 @@ function AssistantPanel() {
                       sourceText={chat}
                       isEditing={showEditForm}
                       onEdit={() => setShowEditForm(!showEditForm)}
+                      onNewOrder={resetOrderState}
                       onSaveToShop={confirmOrder}
                       isSavingToShop={isSaving}
                       isSavedToShop={confirmed}
@@ -1039,19 +1160,9 @@ function AssistantPanel() {
                         type="button"
                         className="secondary-button"
                         style={{ minHeight: "36px", fontSize: "0.75rem" }}
-                        onClick={() => {
-                          setHasOrder(false);
-                          setConfirmed(false);
-                          setOrder(emptyEditableOrder());
-                          setOrderId(null);
-                          orderIdRef.current = null;
-                          setSavedOrder(null);
-                          setChat("");
-                          setShowEditForm(false);
-                          setNotice("Ready for new order.");
-                        }}
+                        onClick={resetOrderState}
                       >
-                        + New Order (အသစ်ပြုလုပ်မည်)
+                        {t.newOrder}
                       </button>
                     </div>
                   </>
