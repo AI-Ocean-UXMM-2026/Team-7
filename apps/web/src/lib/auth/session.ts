@@ -122,25 +122,48 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
   const session = await getCurrentSession();
   if (!session) return null;
 
-  let targetShopId = requestedShopId;
-  let isAuthorized = false;
+  const shops = getUserAuthorizedShops(session.userId);
+  if (shops.length === 0) return null;
 
-  if (targetShopId && uuidSchema.safeParse(targetShopId).success) {
-    const mem = verifyShopMembership(session.userId, targetShopId);
+  // The shop with the most data (orders, etc.) is prioritized
+  const bestShop = shops.find((s) => !s.is_sample) ?? shops[0];
+  if (!bestShop) return null;
+  const db = getDb();
+
+  let targetShopId: string | undefined = undefined;
+
+  // Case 1: Caller provided an explicit shopId
+  if (requestedShopId && uuidSchema.safeParse(requestedShopId).success) {
+    const mem = verifyShopMembership(session.userId, requestedShopId);
     if (mem.authorized && mem.shop) {
-      isAuthorized = true;
+      const reqOrderCount = (db.prepare("SELECT COUNT(*) as count FROM orders WHERE shop_id = ?").get(requestedShopId) as { count: number })?.count ?? 0;
+      const reqExpenseCount = (db.prepare("SELECT COUNT(*) as count FROM expenses WHERE shop_id = ?").get(requestedShopId) as { count: number })?.count ?? 0;
+      const bestOrderCount = (db.prepare("SELECT COUNT(*) as count FROM orders WHERE shop_id = ?").get(bestShop.shop_id) as { count: number })?.count ?? 0;
+
+      // If requested shop is an empty ghost shop, but the user has a real store with data, heal to the store with data
+      if (reqOrderCount === 0 && reqExpenseCount === 0 && bestOrderCount > 0 && bestShop.shop_id !== requestedShopId) {
+        targetShopId = bestShop.shop_id;
+      } else {
+        targetShopId = requestedShopId;
+      }
     }
   }
 
-  if (!isAuthorized) {
+  // Case 2: No requestedShopId (or unauthorized), try active cookie or fallback to bestShop
+  if (!targetShopId) {
     try {
       const cookieStore = await cookies();
       const activeCookie = cookieStore.get("salesayar_active_shop")?.value;
       if (activeCookie && uuidSchema.safeParse(activeCookie).success) {
         const mem = verifyShopMembership(session.userId, activeCookie);
         if (mem.authorized && mem.shop) {
-          targetShopId = activeCookie;
-          isAuthorized = true;
+          const cookieOrderCount = (db.prepare("SELECT COUNT(*) as count FROM orders WHERE shop_id = ?").get(activeCookie) as { count: number })?.count ?? 0;
+          const bestOrderCount = (db.prepare("SELECT COUNT(*) as count FROM orders WHERE shop_id = ?").get(bestShop.shop_id) as { count: number })?.count ?? 0;
+          if (cookieOrderCount === 0 && bestOrderCount > 0 && bestShop.shop_id !== activeCookie) {
+            targetShopId = bestShop.shop_id;
+          } else {
+            targetShopId = activeCookie;
+          }
         }
       }
     } catch {
@@ -148,14 +171,11 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
     }
   }
 
-  if (!isAuthorized) {
-    const shops = getUserAuthorizedShops(session.userId);
-    if (shops.length === 0) return null;
-    const liveShop = shops.find((s) => !s.is_sample) || shops[0];
-    targetShopId = liveShop!.shop_id;
+  if (!targetShopId) {
+    targetShopId = bestShop.shop_id;
   }
 
-  const membership = verifyShopMembership(session.userId, targetShopId!);
+  const membership = verifyShopMembership(session.userId, targetShopId);
   if (!membership.authorized || !membership.shop) return null;
 
   return {

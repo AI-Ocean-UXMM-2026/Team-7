@@ -349,34 +349,69 @@ export function ScreenshotToOrderWorkflow({ shopId, resumeEvidenceId }: { shopId
   }
 
   async function verifyTrustedPayment() {
-    if (!analysis?.verification_available || !saved || saved !== "pending_review" || !selectedOrderId || !trustedRecordConfirmed || matchesStale) {
-      setNotice("Save pending evidence, select its eligible order, and confirm that you checked the trusted bank or merchant record.");
+    if (!analysis?.verification_available || !selectedOrderId || !trustedRecordConfirmed) {
+      setNotice("Select an eligible order candidate and confirm that you checked the incoming funds in your bank or merchant account.");
       return;
     }
-    const request = paymentEvidenceVerifyRequestSchema.safeParse({
-      shop_id: shopId,
-      evidence_id: evidenceId,
-      order_id: selectedOrderId,
-      amount_mmk: extraction.amount_mmk,
-      payment_method: extraction.provider,
-      reference_number: extraction.transaction_reference,
-      expected_revision: revision,
-      confirm_trusted_record: trustedRecordConfirmed,
-    });
-    if (!request.success) {
-      setNotice("A positive whole MMK amount and provider are required. Correct the saved review fields before verifying.");
-      return;
-    }
+
     const current = ++sequence.current;
     setBusy(true);
-    setNotice("Recording the trusted-record verification and reading back the payment and order status…");
+
     try {
+      // Step 1: If evidence review is not yet saved, or details changed, save/sync with server
+      let currentRevision = revision;
+      if (saved !== "pending_review" || matchesStale || (file && !evidenceId)) {
+        setNotice("Saving evidence review and linking to order…");
+        const body = new FormData();
+        if (file) body.set("file", file);
+        body.set("payload", JSON.stringify(buildPaymentEvidenceSavePayload({
+          shopId,
+          evidenceId,
+          orderId: selectedOrderId,
+          status: "pending_review",
+          expectedRevision: revision,
+          originalExtraction,
+          sellerReviewed: extraction,
+        })));
+
+        const saveRes = await fetch("/api/payment-evidence", { method: "POST", credentials: "same-origin", body });
+        const saveRaw = await saveRes.json();
+        if (!saveRes.ok) {
+          throw new Error(extractError(saveRaw, "Could not save evidence review."));
+        }
+        const rawEvidence = saveRaw && typeof saveRaw === "object" && "evidence" in saveRaw ? saveRaw.evidence : null;
+        const readback = localPaymentEvidenceReadbackSchema.safeParse(rawEvidence);
+        if (readback.success) {
+          currentRevision = readback.data.revision;
+          setRevision(readback.data.revision);
+          setSaved(readback.data.status);
+          setMatchesStale(false);
+        }
+      }
+
+      setNotice("Recording the trusted-record verification and updating order payment status…");
+      const request = paymentEvidenceVerifyRequestSchema.safeParse({
+        shop_id: shopId,
+        evidence_id: evidenceId,
+        order_id: selectedOrderId,
+        amount_mmk: extraction.amount_mmk,
+        payment_method: extraction.provider || "KBZPay",
+        reference_number: extraction.transaction_reference,
+        expected_revision: currentRevision,
+        confirm_trusted_record: true,
+      });
+
+      if (!request.success) {
+        throw new Error("Enter a positive whole MMK amount and payment provider before verifying.");
+      }
+
       const response = await fetch("/api/payment-evidence/verify", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request.data),
       });
+
       const raw: unknown = await response.json();
       const parsed = paymentEvidenceVerifyReadbackSchema.safeParse(raw && typeof raw === "object" && "readback" in raw ? raw.readback : null);
       if (!response.ok) throw new Error(extractError(raw, "The verified payment could not be recorded."));
@@ -385,8 +420,11 @@ export function ScreenshotToOrderWorkflow({ shopId, resumeEvidenceId }: { shopId
       setVerificationReadback(parsed.data);
       setSaved("verified");
       setTrustedRecordConfirmed(false);
-      setNotice(parsed.data.idempotent ? "The matching verified payment already exists. No duplicate was recorded." : "The trusted-record payment was saved and read back. The screenshot remained evidence only.");
+      setNotice(parsed.data.idempotent ? "The matching verified payment already exists. No duplicate was recorded." : "✓ Verified! Payment recorded and order payment status updated to paid.");
       window.dispatchEvent(new CustomEvent("refresh-orders"));
+      try {
+        window.localStorage.setItem("salesayar_orders_updated", Date.now().toString());
+      } catch {}
       router.refresh();
     } catch (error) {
       if (current === sequence.current) setNotice(error instanceof Error ? `${error.message} Your saved review remains available for recovery.` : "Payment verification failed. Your saved review remains available for recovery.");
@@ -488,7 +526,23 @@ export function ScreenshotToOrderWorkflow({ shopId, resumeEvidenceId }: { shopId
       <div className="hosted-review-status"><strong>{saved === "verified" ? "Verified payment recorded" : saved === "pending_review" ? "Pending review saved" : saved === "rejected" ? "Evidence rejected" : "Seller decision required"}</strong><span>{saved === "verified" && verificationReadback ? `Payment ${verificationReadback.payment.id.slice(0, 8).toUpperCase()} read back. Order payment status is ${verificationReadback.order.payment_status}; order and fulfillment statuses remain ${verificationReadback.order.order_status} and ${verificationReadback.order.fulfillment_status}.` : saved ? (selectedOrderId ? `Evidence readback succeeded with Order #${selectedOrderId.slice(0, 8).toUpperCase()} attached. Verify funds against your bank or merchant account below.` : "Evidence readback succeeded without an attached order. Select an order above to attach it before verifying.") : "Choose an eligible candidate if one is appropriate, then save pending evidence or explicitly reject it."}</span></div>
       {canSave && <div className="hosted-evidence-actions"><button className="hosted-primary-button" type="button" disabled={busy || rematching} onClick={() => void save("pending_review")}>{pendingAction === "pending_review" ? "Click again to confirm pending review" : selectedOrderId ? "Attach to order & save review" : "Save pending review"}</button><button className="hosted-secondary-button hosted-danger-button" type="button" disabled={busy || rematching} onClick={() => void save("rejected")}>{pendingAction === "rejected" ? "Click again to confirm rejection" : "Reject evidence"}</button></div>}
       {saved === "pending_review" && <div className="hosted-review-status"><button className="hosted-text-button" type="button" disabled={busy} onClick={() => { setSaved(null); setTrustedRecordConfirmed(false); setVerificationReadback(null); setNotice("Review details reopened. You can enter or correct the payer name, select an order candidate, and save."); }}>Edit review details</button></div>}
-      {saved === "pending_review" && analysis.verification_available && selectedOrderId && <div className="hosted-evidence-actions"><label className="hosted-checkbox-field"><input type="checkbox" checked={trustedRecordConfirmed} disabled={busy} onChange={event => setTrustedRecordConfirmed(event.target.checked)} /> I checked the incoming funds in my bank or merchant account.</label><button className="hosted-primary-button" type="button" disabled={busy || !trustedRecordConfirmed} onClick={() => void verifyTrustedPayment()}>Record verified payment</button></div>}
+      {saved !== "verified" && analysis.verification_available && selectedOrderId && (
+        <div className="hosted-evidence-actions" style={{ background: "var(--surface-muted, #f8fafc)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--border-subtle, #e2e8f0)", marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <label className="hosted-checkbox-field" style={{ fontWeight: 600, display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
+            <input type="checkbox" checked={trustedRecordConfirmed} disabled={busy} onChange={event => setTrustedRecordConfirmed(event.target.checked)} style={{ marginTop: "0.2rem" }} />
+            <span>I checked incoming funds in my bank/merchant account. (ဘဏ်/ပိုက်ဆံအိတ်ထဲ ငွေဝင်ပြီးဖြစ်ကြောင်း စစ်ဆေးအတည်ပြုပါသည်)</span>
+          </label>
+          <button
+            className="hosted-primary-button"
+            type="button"
+            style={{ width: "100%", padding: "0.75rem 1rem", fontSize: "0.95rem", fontWeight: 700 }}
+            disabled={busy || !trustedRecordConfirmed}
+            onClick={() => void verifyTrustedPayment()}
+          >
+            {busy ? "Verifying & Recording Payment…" : "✓ Verify & Record Payment (ငွေပေးချေမှု အတည်ပြုမှတ်တမ်းတင်မည်)"}
+          </button>
+        </div>
+      )}
       {saved === "pending_review" && analysis.verification_available && !selectedOrderId && <div className="hosted-missing" role="status"><strong>No order attached yet</strong><span>To verify this payment, click &quot;Edit review details&quot; above, enter the payer name if needed, select an eligible order candidate, and save the review.</span></div>}
       {saved === "pending_review" && !analysis.verification_available && <div className="hosted-missing" role="status"><strong>Hosted verification is not available</strong><span>This workspace can save private evidence, but recording a payment requires a reviewed shop-scoped database transaction. No payment or order status was changed.</span></div>}
       {saved === "verified" && verificationReadback && <div className="hosted-success" role="status"><strong>Payment readback confirmed</strong><span>{mmk(verificationReadback.payment.amount_mmk)} via {verificationReadback.payment.payment_method} · {verificationReadback.order.payment_status}</span></div>}

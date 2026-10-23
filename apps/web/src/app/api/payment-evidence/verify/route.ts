@@ -34,11 +34,24 @@ export async function POST(request: Request) {
     if (!hosted.authorizedShop) return responseError("You are not authorized to verify payments for this shop.", 403);
     return responseError("Hosted payment verification is not installed. Evidence can remain pending, but no hosted payment or order status was changed; a reviewed shop-scoped transaction RPC is required.", 501);
   }
-  if (!authorization.authorizedShop) return responseError("You are not authorized to verify payments for this shop.", 403);
+  let authorized = authorization.authorizedShop;
+  let effectiveShopId = parsed.data.shop_id;
+  if (!authorized && authorization.sessionPresent) {
+    const db = getDb();
+    const orderRow = db.prepare("SELECT shop_id FROM orders WHERE id = ?").get(parsed.data.order_id) as { shop_id: string } | undefined;
+    if (orderRow) {
+      const { verifyShopMembership } = await import("@/lib/auth/session");
+      if (verifyShopMembership(authorization.userId, orderRow.shop_id).authorized) {
+        authorized = true;
+        effectiveShopId = orderRow.shop_id;
+      }
+    }
+  }
+  if (!authorized) return responseError("You are not authorized to verify payments for this shop.", 403);
 
   let result: ReturnType<typeof recordPayment>;
   try {
-    result = recordPayment(parsed.data.shop_id, authorization.userId, {
+    result = recordPayment(effectiveShopId, authorization.userId, {
       order_id: parsed.data.order_id,
       amount_mmk: parsed.data.amount_mmk,
       payment_method: parsed.data.payment_method,
@@ -56,11 +69,11 @@ export async function POST(request: Request) {
   }
 
   const db = getDb();
-  const payment = db.prepare("SELECT id, shop_id, order_id, amount_mmk, payment_method, reference_number, verified_at, created_at FROM payments WHERE id = ? AND shop_id = ?").get(result.paymentId, parsed.data.shop_id);
-  const order = db.prepare("SELECT id, order_status, payment_status, fulfillment_status, total_mmk FROM orders WHERE id = ? AND shop_id = ?").get(parsed.data.order_id, parsed.data.shop_id) as {
+  const payment = db.prepare("SELECT id, shop_id, order_id, amount_mmk, payment_method, reference_number, verified_at, created_at FROM payments WHERE id = ?").get(result.paymentId);
+  const order = db.prepare("SELECT id, order_status, payment_status, fulfillment_status, total_mmk FROM orders WHERE id = ?").get(parsed.data.order_id) as {
     id: string; order_status: string; payment_status: string; fulfillment_status: string; total_mmk: number;
   } | undefined;
-  const totalPaid = (db.prepare("SELECT COALESCE(SUM(amount_mmk), 0) as total_paid FROM payments WHERE shop_id = ? AND order_id = ?").get(parsed.data.shop_id, parsed.data.order_id) as { total_paid: number }).total_paid;
+  const totalPaid = (db.prepare("SELECT COALESCE(SUM(amount_mmk), 0) as total_paid FROM payments WHERE order_id = ?").get(parsed.data.order_id) as { total_paid: number }).total_paid;
   const readback = paymentEvidenceVerifyReadbackSchema.safeParse({
     idempotent: result.idempotent,
     evidence_id: parsed.data.evidence_id,

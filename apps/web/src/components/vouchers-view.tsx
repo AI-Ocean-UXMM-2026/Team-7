@@ -210,7 +210,24 @@ export function VoucherModal({
           <h3 id="voucher-preview-title">
             {isBurmese ? `အရောင်းပြေစာ · အော်ဒါ ${orderLabel}` : `Voucher preview · Order ${orderLabel}`}
           </h3>
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            {order.payment_status === "unpaid" && (
+              <button
+                type="button"
+                className="auth-secondary"
+                style={{ fontWeight: 600, color: "var(--ocean-primary-strong, #0284c7)" }}
+                onClick={() => {
+                  onClose();
+                  window.dispatchEvent(
+                    new CustomEvent("open-saya-assistant", {
+                      detail: { view: "match", orderId: order.id },
+                    })
+                  );
+                }}
+              >
+                {isBurmese ? "စလစ်စစ်ဆေးမည် →" : "Verify Slip →"}
+              </button>
+            )}
             <button type="button" className="auth-submit voucher-print-btn" onClick={handlePrint}>
               {isBurmese ? "ပရင့်ထုတ်ရန် / PDF သိမ်းရန်" : "Print / Save PDF"}
             </button>

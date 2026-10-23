@@ -486,12 +486,7 @@ function TopNavigationItems({
         document.cookie = `salesayar_active_shop=${encodeURIComponent(shop)}; path=/; max-age=2592000; SameSite=Lax`;
       } catch {}
     } else {
-      try {
-        const stored = localStorage.getItem("salesayar_active_shop");
-        if (stored && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stored)) {
-          setActiveShop(stored);
-        }
-      } catch {}
+      setActiveShop(undefined);
     }
   }, [shop]);
 
@@ -551,12 +546,7 @@ function NavigationItems({
         document.cookie = `salesayar_active_shop=${encodeURIComponent(shop)}; path=/; max-age=2592000; SameSite=Lax`;
       } catch {}
     } else {
-      try {
-        const stored = localStorage.getItem("salesayar_active_shop");
-        if (stored && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stored)) {
-          setActiveShop(stored);
-        }
-      } catch {}
+      setActiveShop(undefined);
     }
   }, [shop]);
 

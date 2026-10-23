@@ -26,13 +26,19 @@ function validationMessage(path: string, fallback: string) {
   return fallback;
 }
 
-type OrderManagerProps = { shopId: string; initial: OrdersResult; initialQuery: string; initialOrderId?: string };
+type OrderManagerProps = {
+  shopId: string;
+  initial: OrdersResult;
+  initialQuery: string;
+  initialOrderId?: string;
+  otherShops?: Array<{ shop_id: string; name: string }>;
+};
 
 export function OrderManager(props: OrderManagerProps) {
   return <OrderManagerView key={`${props.shopId}:${props.initialQuery}:${props.initialOrderId ?? ""}`} {...props} />;
 }
 
-function OrderManagerView({ shopId, initial, initialQuery, initialOrderId }: OrderManagerProps) {
+function OrderManagerView({ shopId, initial, initialQuery, initialOrderId, otherShops = [] }: OrderManagerProps) {
   const { language } = useShellLanguage();
   const labels = shellLabels(language);
   const [orders, setOrders] = useState(initial.orders ?? []);
@@ -230,9 +236,35 @@ function OrderManagerView({ shopId, initial, initialQuery, initialOrderId }: Ord
                   {language === "my" ? "စစ်ထုတ်မှုများ ပယ်ဖျက်ရန်" : "Clear filters"}
                 </button>
               ) : (
-                <button className="auth-secondary" onClick={() => setSelected("new")}>
-                  {labels.createOrder}
-                </button>
+                <>
+                  <button className="auth-secondary" onClick={() => setSelected("new")}>
+                    {labels.createOrder}
+                  </button>
+                  {otherShops.length > 0 && (
+                    <div style={{ marginTop: "1rem", padding: "0.85rem 1.25rem", background: "var(--surface-muted, #f8fafc)", borderRadius: "8px", border: "1px solid var(--border-subtle, #e2e8f0)", maxWidth: "520px" }}>
+                      <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-muted, #64748b)", lineHeight: 1.5 }}>
+                        {language === "my" ? (
+                          <>လက်ရှိဆိုင်ခွဲတွင် အော်ဒါမှတ်တမ်း မရှိသေးပါ။ သင်၏ အခြားဆိုင်ခွဲသို့ ပြောင်းလဲကြည့်ရှုလိုပါက-</>
+                        ) : (
+                          <>Your other authorized workspace has orders. Click below to switch:</>
+                        )}
+                      </p>
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.6rem", justifyContent: "center" }}>
+                        {otherShops.map((other) => (
+                          <a
+                            key={other.shop_id}
+                            href={`/sales?shop=${other.shop_id}`}
+                            className="btn-secondary"
+                            style={{ fontSize: "0.8125rem", padding: "0.35rem 0.85rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
+                          >
+                            <span>{other.name}</span>
+                            <span>→</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -250,6 +282,7 @@ function OrderManagerView({ shopId, initial, initialQuery, initialOrderId }: Ord
 }
 
 export function OrderDrawer({ shopId, order, savedNotice, close, saved, readOnly = false }: { shopId: string; order: OrderDetails | null; savedNotice: string; close: () => void; saved: (order: OrderDetails) => void; readOnly?: boolean }) {
+  const { language } = useShellLanguage();
   const dialog = useRef<HTMLDialogElement>(null);
   const summary = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(!order);
@@ -331,7 +364,31 @@ export function OrderDrawer({ shopId, order, savedNotice, close, saved, readOnly
       <dl className="order-totals"><div><dt>Subtotal</dt><dd>{money(order.subtotal_mmk)}</dd></div><div><dt>Delivery</dt><dd>{money(order.delivery_fee_mmk)}</dd></div><div><dt>Discount</dt><dd>−{money(order.discount_mmk)}</dd></div><div><dt>Total</dt><dd>{money(order.total_mmk)}</dd></div></dl>
       <h3>Notes</h3><p>{order.notes ?? "No notes"}</p><p className="muted">Last saved {date(order.updated_at)} · Myanmar time</p>
       <p className="settings-note">Payment verification is a separate workflow. Saving an order never marks it paid.</p>
-      {!readOnly && <><button className="auth-submit" disabled={order.payment_status !== "unpaid"} onClick={() => setEditing(true)}>Edit order</button>{order.payment_status !== "unpaid" && <p>Orders with payment records need payment adjustment review before editing.</p>}</>}
+      {!readOnly && (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
+          <button className="auth-submit" disabled={order.payment_status !== "unpaid"} onClick={() => setEditing(true)}>
+            {language === "my" ? "အော်ဒါ ပြင်ဆင်မည်" : "Edit order"}
+          </button>
+          {order.payment_status === "unpaid" && (
+            <button
+              type="button"
+              className="auth-secondary"
+              style={{ fontWeight: 600, color: "var(--ocean-primary-strong, #0284c7)" }}
+              onClick={() => {
+                close();
+                window.dispatchEvent(
+                  new CustomEvent("open-saya-assistant", {
+                    detail: { view: "match", orderId: order.id },
+                  })
+                );
+              }}
+            >
+              {language === "my" ? "ငွေလွှဲစလစ် စစ်ဆေးအတည်ပြုမည် →" : "Verify Payment Slip →"}
+            </button>
+          )}
+        </div>
+      )}
+      {order.payment_status !== "unpaid" && <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>{language === "my" ? "ငွေပေးချေမှုမှတ်တမ်းရှိသော အော်ဒါများကို ပြင်ဆင်ရန် ငွေစာရင်းစစ်ဆေးမှု ပြုလုပ်ရပါမည်။" : "Orders with payment records need payment adjustment review before editing."}</p>}
     </div> : <form noValidate onSubmit={e => { e.preventDefault(); const result = validate(); if (result.success) void submit(result.data); else requestAnimationFrame(() => summary.current?.focus()); }}>
       <div className="drawer-content">
         {(error || Object.keys(errors).length > 0) && <div ref={summary} tabIndex={-1} role="alert" className="order-error-summary"><h3>Check your order</h3>{error && <p>{error}</p>}<ul>{Object.entries(errors).map(([path, message]) => <li key={path}><a href={`#order-${path}`}>{fieldLabel(path)}: {message}</a></li>)}</ul></div>}

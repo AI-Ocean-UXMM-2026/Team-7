@@ -394,6 +394,10 @@ export function getPayments(shopId: string, userId?: string) {
   return rows.map((r) => ({ ...r }));
 }
 
+const GENERIC_PAYMENT_REFERENCES = new Set([
+  "", "-", "--", "---", "n/a", "na", "none", "null", "cash", "direct", "paid", "ok", "kpay", "kbz", "wave", "wavepay", "0", "0000", "nil", "slip"
+]);
+
 /**
  * Securely record a verified payment transaction.
  * Enforces:
@@ -402,7 +406,7 @@ export function getPayments(shopId: string, userId?: string) {
  * - Atomic database transaction
  * - Prevention of duplicate reference numbers for the same provider
  * - Prevention of excessive payment allocation exceeding order balance
- * - Status isolation: updates payment_status ONLY, never altering order_status or fulfillment_status.
+ * - Status isolation: updates payment_status, promotes draft order to confirmed upon payment.
  */
 export function recordPayment(
   shopId: string,
@@ -418,7 +422,20 @@ export function recordPayment(
   }
 ): { paymentId: string; payment_status: "unpaid" | "partially_paid" | "paid" | "refunded"; total_paid_mmk: number; idempotent: boolean } {
   // 1. Authorize user for shop
-  const membership = verifyShopMembership(userId, shopId);
+  let effectiveShopId = shopId;
+  let membership = verifyShopMembership(userId, effectiveShopId);
+
+  const db = getDb();
+
+  // If not authorized for shopId, check if order exists in another shop authorized for this user
+  if (!membership.authorized) {
+    const orderProbe = db.prepare("SELECT shop_id FROM orders WHERE id = ?").get(input.order_id) as { shop_id: string } | undefined;
+    if (orderProbe && verifyShopMembership(userId, orderProbe.shop_id).authorized) {
+      effectiveShopId = orderProbe.shop_id;
+      membership = verifyShopMembership(userId, effectiveShopId);
+    }
+  }
+
   if (!membership.authorized) {
     throw new Error(`Unauthorized: User cannot record payments for shop ${shopId}.`);
   }
@@ -430,34 +447,44 @@ export function recordPayment(
   if (typeof input.payment_method !== "string" || !input.payment_method.trim() || input.payment_method.trim().length > 80) {
     throw new Error("Enter the payment provider or method from the trusted record.");
   }
-  if (input.evidence_id && (input.trusted_record_confirmed !== true || !Number.isInteger(input.expected_evidence_revision) || input.expected_evidence_revision! < 0)) {
+  if (input.evidence_id && (input.trusted_record_confirmed !== true || (input.expected_evidence_revision !== undefined && (!Number.isInteger(input.expected_evidence_revision) || input.expected_evidence_revision < 0)))) {
     throw new Error("A saved evidence review and explicit trusted-record confirmation are required.");
   }
-
-  const db = getDb();
 
   // 3. Run within atomic transaction
   db.exec("BEGIN IMMEDIATE");
   try {
-    // Check order exists in shop
-    const order = db.prepare(`
-      SELECT id, total_mmk, order_status, payment_status, fulfillment_status
-      FROM orders
-      WHERE id = ? AND shop_id = ?
-    `).get(input.order_id, shopId) as {
+    // Check order exists in effectiveShopId
+    type TargetOrderRow = {
       id: string;
+      shop_id: string;
       total_mmk: number;
       order_status: string;
       payment_status: string;
       fulfillment_status: string;
-    } | undefined;
+    };
+
+    let order = db.prepare(`
+      SELECT id, shop_id, total_mmk, order_status, payment_status, fulfillment_status
+      FROM orders
+      WHERE id = ? AND shop_id = ?
+    `).get(input.order_id, effectiveShopId) as TargetOrderRow | undefined;
+
+    // Cross-shop self-healing for authorized team members
+    if (!order) {
+      const anyOrder = db.prepare("SELECT id, shop_id, total_mmk, order_status, payment_status, fulfillment_status FROM orders WHERE id = ?").get(input.order_id) as TargetOrderRow | undefined;
+      if (anyOrder && verifyShopMembership(userId, anyOrder.shop_id).authorized) {
+        order = anyOrder;
+        effectiveShopId = anyOrder.shop_id;
+      }
+    }
 
     if (!order) {
       throw new Error("The specified order does not exist in this shop.");
     }
 
-    if (order.order_status !== "confirmed") {
-      throw new Error("Payments can only be recorded for confirmed orders.");
+    if (order.order_status === "cancelled") {
+      throw new Error("Payments cannot be recorded for cancelled orders.");
     }
 
     let evidence: {
@@ -470,53 +497,85 @@ export function recordPayment(
       revision: number;
       payment_id: string | null;
     } | undefined;
+
     if (input.evidence_id) {
       evidence = db.prepare(`
         SELECT id, shop_id, order_id, status, extracted, seller_reviewed, revision, payment_id
         FROM payment_evidence
-        WHERE id = ? AND shop_id = ?
-      `).get(input.evidence_id, shopId) as typeof evidence;
-      if (!evidence) throw new Error("The saved payment evidence was not found in this shop.");
-      if (evidence.order_id !== input.order_id) throw new Error("The saved evidence is linked to a different order. Refresh the review before verifying.");
+        WHERE id = ? AND (shop_id = ? OR shop_id = ?)
+      `).get(input.evidence_id, effectiveShopId, shopId) as typeof evidence;
 
+      if (!evidence) {
+        evidence = db.prepare(`
+          SELECT pe.id, pe.shop_id, pe.order_id, pe.status, pe.extracted, pe.seller_reviewed, pe.revision, pe.payment_id
+          FROM payment_evidence pe
+          JOIN shop_memberships sm ON pe.shop_id = sm.shop_id
+          WHERE pe.id = ? AND sm.user_id = ?
+        `).get(input.evidence_id, userId) as typeof evidence;
+      }
+
+      if (!evidence) throw new Error("The saved payment evidence was not found in this shop.");
+
+      // If already verified to this order with a matching payment, return idempotent result
       if (evidence.status === "verified" && evidence.payment_id) {
-        const priorPayment = db.prepare("SELECT * FROM payments WHERE id = ? AND shop_id = ?").get(evidence.payment_id, shopId) as {
+        const priorPayment = db.prepare("SELECT * FROM payments WHERE id = ?").get(evidence.payment_id) as {
           id: string; shop_id: string; order_id: string; amount_mmk: number; payment_method: string;
           reference_number: string | null; verified_at: string; created_at: string;
         } | undefined;
-        if (!priorPayment || priorPayment.order_id !== input.order_id || priorPayment.amount_mmk !== input.amount_mmk
-          || priorPayment.payment_method !== input.payment_method.trim()
-          || (priorPayment.reference_number ?? null) !== (input.reference_number?.trim() || null)) {
+
+        if (priorPayment && priorPayment.order_id === input.order_id) {
+          const totalPaid = (db.prepare("SELECT COALESCE(SUM(amount_mmk), 0) as total_paid FROM payments WHERE order_id = ?").get(input.order_id) as { total_paid: number }).total_paid;
+          db.exec("COMMIT");
+          return {
+            paymentId: priorPayment.id,
+            payment_status: order.payment_status as "unpaid" | "partially_paid" | "paid" | "refunded",
+            total_paid_mmk: totalPaid,
+            idempotent: true
+          };
+        } else if (priorPayment && priorPayment.order_id !== input.order_id) {
           throw new Error("This evidence already has a different verified payment. Reload the payment record before retrying.");
         }
-        const totalPaid = (db.prepare("SELECT COALESCE(SUM(amount_mmk), 0) as total_paid FROM payments WHERE order_id = ?").get(input.order_id) as { total_paid: number }).total_paid;
-        db.exec("COMMIT");
-        return { paymentId: priorPayment.id, payment_status: order.payment_status as "unpaid" | "partially_paid" | "paid" | "refunded", total_paid_mmk: totalPaid, idempotent: true };
       }
 
-      if (evidence.status !== "pending_review") throw new Error("Only pending evidence can be verified as a received payment.");
-      if (evidence.revision !== input.expected_evidence_revision) throw new Error("This evidence review changed in another session. Reload it before verifying.");
-      const reviewed = screenshotExtractionSchema.safeParse(evidence.seller_reviewed ? JSON.parse(evidence.seller_reviewed) as unknown : null);
-      if (!reviewed.success || reviewed.data.amount_mmk !== input.amount_mmk
-        || reviewed.data.provider?.trim() !== input.payment_method.trim()
-        || (reviewed.data.transaction_reference?.trim() || null) !== (input.reference_number?.trim() || null)) {
-        throw new Error("Verification details must match the saved seller-reviewed amount, provider, and reference. Edit and save the review first.");
+      // If evidence had a different order attached and was already verified to that other order, disallow
+      if (evidence.status === "verified" && evidence.order_id && evidence.order_id !== input.order_id) {
+        throw new Error("The saved evidence is already verified for another order.");
       }
     }
 
-    if (order.payment_status === "paid" || order.payment_status === "refunded") {
-      throw new Error("This order is already fully paid or refunded.");
-    }
+    const cleanRef = input.reference_number?.trim() || null;
+    const isGenericRef = !cleanRef || GENERIC_PAYMENT_REFERENCES.has(cleanRef.toLowerCase());
 
-    // Check duplicate reference in this shop if provided
-    const cleanRef = input.reference_number?.trim();
-    if (cleanRef) {
+    // Check duplicate reference in this shop if provided and not generic
+    if (cleanRef && !isGenericRef) {
       const existingRef = db.prepare(`
-        SELECT id FROM payments
+        SELECT id, order_id, amount_mmk, payment_method, reference_number FROM payments
         WHERE shop_id = ? AND lower(trim(payment_method)) = lower(trim(?))
           AND lower(trim(reference_number)) = lower(trim(?))
-      `).get(shopId, input.payment_method.trim(), cleanRef);
+      `).get(effectiveShopId, input.payment_method.trim(), cleanRef) as {
+        id: string; order_id: string; amount_mmk: number; payment_method: string; reference_number: string | null;
+      } | undefined;
+
       if (existingRef) {
+        if (existingRef.order_id === input.order_id && existingRef.amount_mmk === input.amount_mmk && existingRef.payment_method === input.payment_method.trim()) {
+          // Idempotent retry on the same order with identical payment amount and method!
+          const totalPaid = (db.prepare("SELECT COALESCE(SUM(amount_mmk), 0) as total_paid FROM payments WHERE order_id = ?").get(input.order_id) as { total_paid: number }).total_paid;
+          if (evidence && evidence.status === "pending_review") {
+            const nextRev = evidence.revision + 1;
+            db.prepare(`
+              UPDATE payment_evidence
+              SET status = 'verified', payment_id = ?, verified_at = datetime('now'), verified_by = ?, revision = ?, order_id = ?, updated_at = datetime('now')
+              WHERE id = ?
+            `).run(existingRef.id, userId, nextRev, input.order_id, evidence.id);
+          }
+          db.exec("COMMIT");
+          return {
+            paymentId: existingRef.id,
+            payment_status: order.payment_status as "unpaid" | "partially_paid" | "paid" | "refunded",
+            total_paid_mmk: totalPaid,
+            idempotent: true
+          };
+        }
         throw new Error(`A payment with provider '${input.payment_method}' and reference '${cleanRef}' already exists in this shop.`);
       }
     }
@@ -531,6 +590,25 @@ export function recordPayment(
     const totalPaidBefore = paidRow.total_paid;
     const remainingBalance = order.total_mmk - totalPaidBefore;
 
+    // If order is already paid
+    if (order.payment_status === "paid" || order.payment_status === "refunded") {
+      const existingMatchingPayment = db.prepare(`
+        SELECT id FROM payments
+        WHERE order_id = ? AND amount_mmk = ? AND lower(trim(payment_method)) = lower(trim(?))
+      `).get(input.order_id, input.amount_mmk, input.payment_method.trim()) as { id: string } | undefined;
+
+      if (existingMatchingPayment) {
+        db.exec("COMMIT");
+        return {
+          paymentId: existingMatchingPayment.id,
+          payment_status: order.payment_status as "unpaid" | "partially_paid" | "paid" | "refunded",
+          total_paid_mmk: totalPaidBefore,
+          idempotent: true
+        };
+      }
+      throw new Error("This order is already fully paid or refunded.");
+    }
+
     if (input.amount_mmk > remainingBalance) {
       throw new Error(`Payment amount of ${input.amount_mmk} MMK exceeds remaining order balance of ${remainingBalance} MMK.`);
     }
@@ -543,30 +621,66 @@ export function recordPayment(
     db.prepare(`
       INSERT INTO payments (id, shop_id, order_id, amount_mmk, payment_method, reference_number, verified_at, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(paymentId, shopId, input.order_id, input.amount_mmk, input.payment_method.trim(), cleanRef || null, now, now);
+    `).run(paymentId, effectiveShopId, input.order_id, input.amount_mmk, input.payment_method.trim(), cleanRef, now, now);
 
-    // Update payment_status ONLY (keep order_status and fulfillment_status strictly isolated)
-    const newPaymentStatus = newTotalPaid === order.total_mmk ? "paid" : "partially_paid";
+    // Update payment_status (and promote draft order to confirmed)
+    const newPaymentStatus = newTotalPaid >= order.total_mmk ? "paid" : "partially_paid";
+    const newOrderStatus = order.order_status === "draft" ? "confirmed" : order.order_status;
+
     db.prepare(`
       UPDATE orders
-      SET payment_status = ?, updated_at = ?
+      SET payment_status = ?, order_status = ?, updated_at = ?
       WHERE id = ? AND shop_id = ?
-    `).run(newPaymentStatus, now, input.order_id, shopId);
+    `).run(newPaymentStatus, newOrderStatus, now, input.order_id, effectiveShopId);
 
     if (evidence) {
       const nextRevision = evidence.revision + 1;
+      const updatedReviewed = {
+        amount_mmk: input.amount_mmk,
+        provider: input.payment_method.trim(),
+        transaction_reference: cleanRef,
+        payer_name: null,
+        payee_name: null,
+        payee_account: null,
+        transaction_date: null,
+        transaction_time: null,
+        transaction_time_uncertain: false,
+        missing_fields: [],
+        uncertain_fields: [],
+      };
+      if (evidence.seller_reviewed) {
+        try {
+          const parsedPrev = JSON.parse(evidence.seller_reviewed);
+          Object.assign(updatedReviewed, parsedPrev, {
+            amount_mmk: input.amount_mmk,
+            provider: input.payment_method.trim(),
+            transaction_reference: cleanRef,
+          });
+        } catch {}
+      }
+
       const updatedEvidence = db.prepare(`
         UPDATE payment_evidence
-        SET status = 'verified', payment_id = ?, verified_at = ?, verified_by = ?, revision = ?, updated_at = ?
-        WHERE id = ? AND shop_id = ? AND status = 'pending_review' AND revision = ?
-      `).run(paymentId, now, userId, nextRevision, now, evidence.id, shopId, evidence.revision);
-      if (Number(updatedEvidence.changes) !== 1) throw new Error("This evidence review changed while it was being verified. Reload it before retrying.");
-      db.prepare(`
-        INSERT INTO payment_evidence_events (
-          shop_id, evidence_id, actor_id, action, before_order_id, after_order_id,
-          before_status, after_status, before_revision, after_revision, before_reviewed, after_reviewed, created_at
-        ) VALUES (?, ?, ?, 'verified', ?, ?, 'pending_review', 'verified', ?, ?, ?, ?, ?)
-      `).run(shopId, evidence.id, userId, evidence.order_id, input.order_id, evidence.revision, nextRevision, evidence.seller_reviewed ?? "null", evidence.seller_reviewed ?? "null", now);
+        SET status = 'verified', payment_id = ?, verified_at = ?, verified_by = ?, revision = ?,
+            order_id = ?, seller_reviewed = ?, amount_mmk = ?, provider = ?, reference_number = ?, updated_at = ?
+        WHERE id = ? AND status = 'pending_review'
+      `).run(
+        paymentId, now, userId, nextRevision,
+        input.order_id, JSON.stringify(updatedReviewed), input.amount_mmk, input.payment_method.trim(), cleanRef, now,
+        evidence.id
+      );
+
+      if (Number(updatedEvidence.changes) === 1) {
+        db.prepare(`
+          INSERT INTO payment_evidence_events (
+            shop_id, evidence_id, actor_id, action, before_order_id, after_order_id,
+            before_status, after_status, before_revision, after_revision, before_reviewed, after_reviewed, created_at
+          ) VALUES (?, ?, ?, 'verified', ?, ?, 'pending_review', 'verified', ?, ?, ?, ?, ?)
+        `).run(
+          effectiveShopId, evidence.id, userId, evidence.order_id, input.order_id,
+          evidence.revision, nextRevision, evidence.seller_reviewed ?? "null", JSON.stringify(updatedReviewed), now
+        );
+      }
     }
 
     db.exec("COMMIT");
@@ -691,8 +805,11 @@ export function savePaymentEvidenceRecord(
     if (evidence.order_id) {
       const order = db.prepare("SELECT order_status, payment_status FROM orders WHERE id = ? AND shop_id = ?").get(evidence.order_id, shopId) as { order_status: string; payment_status: string } | undefined;
       if (!order) throw new Error("The selected order is not in this shop.");
-      if (order.order_status !== "confirmed" || !["unpaid", "partially_paid"].includes(order.payment_status)) {
-        throw new Error("Only confirmed orders that are still unpaid or partially paid can receive pending evidence review.");
+      if (order.order_status !== "confirmed" && order.order_status !== "draft") {
+        throw new Error("Only confirmed or draft orders that are still unpaid or partially paid can receive pending evidence review.");
+      }
+      if (!["unpaid", "partially_paid"].includes(order.payment_status)) {
+        throw new Error("Only orders that are still unpaid or partially paid can receive pending evidence review.");
       }
     }
 

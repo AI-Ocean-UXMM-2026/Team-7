@@ -102,6 +102,17 @@ export async function POST(request: Request) {
 
   const localAuthorization = await authorizeLocalScreenshotShop(parsed.data.shop_id);
   if (localAuthorization.sessionPresent) {
+    if (!localAuthorization.authorizedShop && parsed.data.order_id) {
+      const db = getDb();
+      const orderRow = db.prepare("SELECT shop_id FROM orders WHERE id = ?").get(parsed.data.order_id) as { shop_id: string } | undefined;
+      if (orderRow) {
+        const { verifyShopMembership } = await import("@/lib/auth/session");
+        if (verifyShopMembership(localAuthorization.userId, orderRow.shop_id).authorized) {
+          localAuthorization.authorizedShop = true;
+          parsed.data.shop_id = orderRow.shop_id;
+        }
+      }
+    }
     if (!localAuthorization.authorizedShop) return responseError("You are not authorized to save evidence for this shop.", 403);
 
     if (!image) {

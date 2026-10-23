@@ -77,6 +77,7 @@ export default async function SalesPage({
           initial={initial}
           initialQuery={q ?? ""}
           initialOrderId={initialOrderId}
+          otherShops={otherShops.map((s) => ({ shop_id: s.shop_id, name: s.shop_name }))}
         />
       ) : selected === "vouchers" ? (
         <VouchersView orders={orders} />

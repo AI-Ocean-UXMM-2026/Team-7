@@ -72,14 +72,15 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string; displ
     WHERE id = ?
   `).run(user.email ?? "", displayName, now, user.id);
 
-  // Auto-redeem any pending shop invitations for this email
+  // Auto-redeem any pending shop invitations or existing memberships for this email
   if (user.email && user.email.includes("@")) {
+    const cleanEmail = user.email.trim();
     try {
       const pendingInvites = db.prepare(`
         SELECT id, shop_id, role
         FROM shop_invitations
-        WHERE lower(email) = lower(?)
-      `).all(user.email.trim()) as Array<{ id: string; shop_id: string; role: string }>;
+        WHERE lower(trim(email)) = lower(?)
+      `).all(cleanEmail) as Array<{ id: string; shop_id: string; role: string }>;
 
       for (const invite of pendingInvites) {
         db.prepare(`
@@ -91,22 +92,56 @@ export function ensureLocalProfile(user: LocalAuthUser): { shopId: string; displ
           DELETE FROM shop_invitations WHERE id = ?
         `).run(invite.id);
       }
+
+      // Check if another profile with the same email has existing shop memberships
+      const sharedMemberships = db.prepare(`
+        SELECT sm.shop_id, sm.role
+        FROM shop_memberships sm
+        JOIN profiles p ON sm.user_id = p.id
+        WHERE lower(trim(p.email)) = lower(?) AND p.id <> ?
+      `).all(cleanEmail, user.id) as Array<{ shop_id: string; role: string }>;
+
+      for (const sm of sharedMemberships) {
+        db.prepare(`
+          INSERT OR IGNORE INTO shop_memberships (shop_id, user_id, role, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(sm.shop_id, user.id, sm.role || "staff", now);
+      }
     } catch (err) {
-      console.warn("Failed auto-redeeming pending shop invitations:", err);
+      console.warn("Failed auto-redeeming pending shop invitations or memberships:", err);
     }
   }
 
-  // Check if user already has an active live shop membership
-  const existingMembership = db.prepare(`
-    SELECT sm.shop_id
+  // Check if user already has an active live shop membership with real business orders
+  const existingMembershipWithOrders = db.prepare(`
+    SELECT sm.shop_id, (SELECT COUNT(*) FROM orders o WHERE o.shop_id = sm.shop_id) as order_count
     FROM shop_memberships sm
     JOIN shops s ON sm.shop_id = s.id
     WHERE sm.user_id = ? AND s.is_sample = 0
-    ORDER BY (SELECT COUNT(*) FROM orders o WHERE o.shop_id = s.id) DESC, sm.created_at ASC
+    ORDER BY order_count DESC, sm.created_at ASC
     LIMIT 1
-  `).get(user.id) as { shop_id: string } | undefined;
+  `).get(user.id) as { shop_id: string; order_count: number } | undefined;
 
-  let targetShopId = existingMembership?.shop_id;
+  let targetShopId = existingMembershipWithOrders?.shop_id;
+
+  // If user has no shop or only an empty shop (0 orders), check if an active store with orders exists in the database
+  if (!targetShopId || existingMembershipWithOrders?.order_count === 0) {
+    const activeTeamShop = db.prepare(`
+      SELECT s.id, (SELECT COUNT(*) FROM orders o WHERE o.shop_id = s.id) as order_count
+      FROM shops s
+      WHERE s.is_sample = 0
+      ORDER BY order_count DESC, s.created_at ASC
+      LIMIT 1
+    `).get() as { id: string; order_count: number } | undefined;
+
+    if (activeTeamShop && activeTeamShop.order_count > 0) {
+      db.prepare(`
+        INSERT OR IGNORE INTO shop_memberships (shop_id, user_id, role, created_at)
+        VALUES (?, ?, 'owner', ?)
+      `).run(activeTeamShop.id, user.id, now);
+      targetShopId = activeTeamShop.id;
+    }
+  }
 
   if (!targetShopId) {
     targetShopId = deterministicShopId(user.id);

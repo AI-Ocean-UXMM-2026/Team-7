@@ -25,9 +25,19 @@ export async function POST(request: Request) {
 
   const localAuthorization = await authorizeLocalScreenshotShop(parsed.data.shop_id);
   if (localAuthorization.sessionPresent) {
+    let effectiveShopId = parsed.data.shop_id;
+    if (!localAuthorization.authorizedShop) {
+      const { getUserAuthorizedShops } = await import("@/lib/auth/session");
+      const userShops = getUserAuthorizedShops(localAuthorization.userId);
+      const activeShop = userShops.find((s) => !s.is_sample) || userShops[0];
+      if (activeShop) {
+        effectiveShopId = activeShop.shop_id;
+        localAuthorization.authorizedShop = true;
+      }
+    }
     if (!localAuthorization.authorizedShop) return NextResponse.json({ error: "You are not authorized to rematch evidence for this shop." }, { status: 403 });
     try {
-      const matched = matchScreenshot(parsed.data.shop_id, parsed.data.extraction, parsed.data.image_sha256 ?? null, localAuthorization.userId);
+      const matched = matchScreenshot(effectiveShopId, parsed.data.extraction, parsed.data.image_sha256 ?? null, localAuthorization.userId);
       return NextResponse.json({
         mode: "live-match", ...matched, image_sha256: parsed.data.image_sha256 ?? null,
         evidence_schema_available: true, verification_available: true,
