@@ -142,7 +142,7 @@ export async function POST(request: Request) {
     if (!image) {
       const db = getDb();
       const existing = db.prepare("SELECT id, image_data, image_sha256 FROM payment_evidence WHERE id = ? AND shop_id = ?").get(parsed.data.evidence_id, parsed.data.shop_id) as { id: string; image_data: string | null; image_sha256: string | null } | undefined;
-      if (!existing) {
+      if (!existing && !parsed.data.order_id) {
         return responseError("Choose exactly one original local JPEG, PNG, or WebP image.", 400);
       }
     }

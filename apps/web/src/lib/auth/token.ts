@@ -175,7 +175,7 @@ export function getUserAuthorizedShops(userId: string): Array<{
       FROM shop_memberships sm
       JOIN shops s ON sm.shop_id = s.id
       WHERE sm.user_id = ?
-      ORDER BY s.is_sample ASC, order_count DESC, sm.created_at ASC
+      ORDER BY s.is_sample ASC, CASE WHEN sm.role = 'owner' THEN 0 ELSE 1 END ASC, order_count DESC, sm.created_at ASC
     `).all(userId) as Array<{ shop_id: string; shop_name: string; role: string; currency: string; is_sample: number }>;
 
     // Self-heal on serverless cold starts: if no shops found, provision primary store
@@ -187,7 +187,7 @@ export function getUserAuthorizedShops(userId: string): Array<{
         FROM shop_memberships sm
         JOIN shops s ON sm.shop_id = s.id
         WHERE sm.user_id = ?
-        ORDER BY s.is_sample ASC, order_count DESC, sm.created_at ASC
+        ORDER BY s.is_sample ASC, CASE WHEN sm.role = 'owner' THEN 0 ELSE 1 END ASC, order_count DESC, sm.created_at ASC
       `).all(userId) as Array<{ shop_id: string; shop_name: string; role: string; currency: string; is_sample: number }>;
     }
 

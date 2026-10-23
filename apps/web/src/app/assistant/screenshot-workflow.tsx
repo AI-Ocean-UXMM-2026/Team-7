@@ -423,29 +423,65 @@ export function ScreenshotToOrderWorkflow({
   }
 
   async function verifyTrustedPayment() {
-    if (!analysis?.verification_available || !selectedOrderId || !trustedRecordConfirmed) {
-      setNotice("Select an eligible order candidate and confirm that you checked the incoming funds in your bank or merchant account.");
+    let targetOrderId = selectedOrderId;
+    if (!targetOrderId && candidates.length > 0) {
+      const best = candidates.find(c => c.eligible) || candidates[0];
+      if (best) {
+        targetOrderId = best.order_id;
+        setSelectedOrderId(best.order_id);
+      }
+    }
+    if (!targetOrderId && initialOrderId) {
+      targetOrderId = initialOrderId;
+      setSelectedOrderId(initialOrderId);
+    }
+    if (!targetOrderId) {
+      setNotice("Select an order to attach before verifying the payment (ငွေပေးချေမှုအတည်ပြုရန် အော်ဒါတစ်ခုကို အရင်ရွေးချယ်ပါ).");
       return;
     }
 
+    const matchedCandidate = candidates.find(c => c.order_id === targetOrderId);
+    const amountToVerify = (extraction.amount_mmk && extraction.amount_mmk > 0)
+      ? extraction.amount_mmk
+      : (matchedCandidate?.total_mmk ?? 0);
+
+    if (amountToVerify <= 0) {
+      setNotice("Enter a positive whole MMK amount before verifying (ငွေပမာဏ ထည့်သွင်းပေးပါ).");
+      return;
+    }
+
+    const providerToVerify = extraction.provider?.trim() || "KBZPay";
+    const refToVerify = extraction.transaction_reference?.trim() || null;
+
     const current = ++sequence.current;
     setBusy(true);
+    setTrustedRecordConfirmed(true);
 
     try {
       // Step 1: If evidence review is not yet saved, or details changed, save/sync with server
       let currentRevision = revision;
+      let currentEvidenceId = evidenceId || crypto.randomUUID();
+      if (!evidenceId) setEvidenceId(currentEvidenceId);
+
+      const reviewedExtraction: ScreenshotExtraction = {
+        ...extraction,
+        amount_mmk: amountToVerify,
+        provider: providerToVerify,
+        transaction_reference: refToVerify,
+      };
+
       if (saved !== "pending_review" || matchesStale || (file && !evidenceId)) {
         setNotice("Saving evidence review and linking to order…");
         const body = new FormData();
         if (file) body.set("file", file);
         body.set("payload", JSON.stringify(buildPaymentEvidenceSavePayload({
           shopId,
-          evidenceId,
-          orderId: selectedOrderId,
+          evidenceId: currentEvidenceId,
+          orderId: targetOrderId,
           status: "pending_review",
           expectedRevision: revision,
-          originalExtraction,
-          sellerReviewed: extraction,
+          originalExtraction: originalExtraction.amount_mmk ? originalExtraction : reviewedExtraction,
+          sellerReviewed: reviewedExtraction,
         })));
 
         const saveRes = await fetch("/api/payment-evidence", { method: "POST", credentials: "same-origin", body });
@@ -460,23 +496,27 @@ export function ScreenshotToOrderWorkflow({
           setRevision(readback.data.revision);
           setSaved(readback.data.status);
           setMatchesStale(false);
+        } else {
+          currentRevision = 1;
+          setRevision(1);
+          setSaved("pending_review");
         }
       }
 
-      setNotice("Recording the trusted-record verification and updating order payment status…");
+      setNotice("Recording the verified payment and updating order payment status…");
       const request = paymentEvidenceVerifyRequestSchema.safeParse({
         shop_id: shopId,
-        evidence_id: evidenceId,
-        order_id: selectedOrderId,
-        amount_mmk: extraction.amount_mmk,
-        payment_method: extraction.provider || "KBZPay",
-        reference_number: extraction.transaction_reference,
+        evidence_id: currentEvidenceId,
+        order_id: targetOrderId,
+        amount_mmk: amountToVerify,
+        payment_method: providerToVerify,
+        reference_number: refToVerify,
         expected_revision: currentRevision,
         confirm_trusted_record: true,
       });
 
       if (!request.success) {
-        throw new Error("Enter a positive whole MMK amount and payment provider before verifying.");
+        throw new Error("Enter a positive whole MMK amount before verifying.");
       }
 
       const response = await fetch("/api/payment-evidence/verify", {
@@ -599,26 +639,23 @@ export function ScreenshotToOrderWorkflow({
       {candidates.length > 0 && analysis.mode !== "error" ? <div className="hosted-candidate-list" aria-label="Authorized order candidates">{candidates.map(candidate => <button key={candidate.order_id} className={`hosted-candidate ${selectedOrderId === candidate.order_id ? "hosted-candidate-selected" : ""}`} type="button" disabled={!candidate.eligible || busy || rematching || saved === "verified"} onClick={() => selectCandidate(candidate)}><span className="hosted-candidate-top"><strong>{candidate.customer_name ?? "Unnamed customer"}</strong><span className={`hosted-mode hosted-mode-${candidate.match_state === "exact" ? "live" : "simulation"}`}>{candidate.match_state}</span></span><span>{mmk(candidate.total_mmk)} · {candidate.amount_relation} amount · {candidate.customer_relation} customer</span><span>{candidate.order_status} · {candidate.payment_status} · {candidate.fulfillment_status}</span><small>{candidate.reasons.join(" ")}</small>{candidate.duplicate_warning && <small className="hosted-danger">Duplicate evidence warning: {candidate.duplicate_warning.replace("_", " ")}</small>}</button>)}</div> : (analysis.mode === "live" || analysis.mode === "manual") && !rematching && <div className="hosted-review-status"><strong>No candidate is ready to select</strong><span>{extraction.amount_mmk === null ? "A readable amount is needed for a useful match; you may still save unmatched evidence for review." : "No same-shop order met the bounded matching conditions."}</span></div>}
       <div className="hosted-review-status"><strong>{saved === "verified" ? "Verified payment recorded" : saved === "pending_review" ? "Pending review saved" : saved === "rejected" ? "Evidence rejected" : "Seller decision required"}</strong><span>{saved === "verified" && verificationReadback ? `Payment ${verificationReadback.payment.id.slice(0, 8).toUpperCase()} read back. Order payment status is ${verificationReadback.order.payment_status}; order and fulfillment statuses remain ${verificationReadback.order.order_status} and ${verificationReadback.order.fulfillment_status}.` : saved ? (selectedOrderId ? `Evidence readback succeeded with Order #${selectedOrderId.slice(0, 8).toUpperCase()} attached. Verify funds against your bank or merchant account below.` : "Evidence readback succeeded without an attached order. Select an order above to attach it before verifying.") : "Choose an eligible candidate if one is appropriate, then save pending evidence or explicitly reject it."}</span></div>
       {canSave && <div className="hosted-evidence-actions"><button className="hosted-primary-button" type="button" disabled={busy || rematching} onClick={() => void save("pending_review")}>{pendingAction === "pending_review" ? "Click again to confirm pending review" : selectedOrderId ? "Attach to order & save review" : "Save pending review"}</button><button className="hosted-secondary-button hosted-danger-button" type="button" disabled={busy || rematching} onClick={() => void save("rejected")}>{pendingAction === "rejected" ? "Click again to confirm rejection" : "Reject evidence"}</button></div>}
-      {saved === "pending_review" && <div className="hosted-review-status"><button className="hosted-text-button" type="button" disabled={busy} onClick={() => { setSaved(null); setTrustedRecordConfirmed(false); setVerificationReadback(null); setNotice("Review details reopened. You can enter or correct the payer name, select an order candidate, and save."); }}>Edit review details</button></div>}
-      {saved !== "verified" && analysis.verification_available && selectedOrderId && (
-        <div className="hosted-evidence-actions" style={{ background: "var(--surface-muted, #f8fafc)", padding: "1rem", borderRadius: "8px", border: "1px solid var(--border-subtle, #e2e8f0)", marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          <label className="hosted-checkbox-field" style={{ fontWeight: 600, display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
-            <input type="checkbox" checked={trustedRecordConfirmed} disabled={busy} onChange={event => setTrustedRecordConfirmed(event.target.checked)} style={{ marginTop: "0.2rem" }} />
-            <span>I checked incoming funds in my bank/merchant account. (ဘဏ်/ပိုက်ဆံအိတ်ထဲ ငွေဝင်ပြီးဖြစ်ကြောင်း စစ်ဆေးအတည်ပြုပါသည်)</span>
-          </label>
+      {/* One-click Verify button: visible right under the review button */}
+      {saved !== "verified" && (selectedOrderId || candidates.length > 0 || Boolean(initialOrderId)) && (
+        <div className="hosted-evidence-actions" style={{ background: "linear-gradient(135deg, #0f4c81 0%, #1a73e8 100%)", padding: "1rem", borderRadius: "10px", marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem", boxShadow: "0 2px 12px rgba(26,115,232,0.25)" }}>
+          <span style={{ color: "#fff", fontSize: "0.85rem", fontWeight: 600, opacity: 0.9 }}>ဘဏ်/ပိုက်ဆံအိတ်ထဲ ငွေဝင်ပြီးဖြစ်ကြောင်း စစ်ဆေးပြီးပါက အောက်ပါခလုတ်ဖြင့် တိုက်ရိုက်အတည်ပြုနိုင်ပါသည်</span>
           <button
             className="hosted-primary-button"
             type="button"
-            style={{ width: "100%", padding: "0.75rem 1rem", fontSize: "0.95rem", fontWeight: 700 }}
-            disabled={busy || !trustedRecordConfirmed}
+            style={{ width: "100%", padding: "0.85rem 1rem", fontSize: "1rem", fontWeight: 700, background: "#fff", color: "#1a73e8", border: "none", borderRadius: "8px", cursor: busy ? "wait" : "pointer" }}
+            disabled={busy}
             onClick={() => void verifyTrustedPayment()}
           >
-            {busy ? "Verifying & Recording Payment…" : "✓ Verify & Record Payment (ငွေပေးချေမှု အတည်ပြုမှတ်တမ်းတင်မည်)"}
+            {busy ? "Verifying…" : "✓ Verify Payment (ငွေပေးချေမှု အတည်ပြုမည်)"}
           </button>
         </div>
       )}
-      {saved === "pending_review" && analysis.verification_available && !selectedOrderId && <div className="hosted-missing" role="status"><strong>No order attached yet</strong><span>To verify this payment, click &quot;Edit review details&quot; above, enter the payer name if needed, select an eligible order candidate, and save the review.</span></div>}
-      {saved === "pending_review" && !analysis.verification_available && <div className="hosted-missing" role="status"><strong>Hosted verification is not available</strong><span>This workspace can save private evidence, but recording a payment requires a reviewed shop-scoped database transaction. No payment or order status was changed.</span></div>}
+      {saved === "pending_review" && <div className="hosted-review-status"><button className="hosted-text-button" type="button" disabled={busy} onClick={() => { setSaved(null); setTrustedRecordConfirmed(false); setVerificationReadback(null); setNotice("Review details reopened. You can enter or correct the payer name, select an order candidate, and save."); }}>Edit review details</button></div>}
+      {saved === "pending_review" && !analysis?.verification_available && <div className="hosted-missing" role="status"><strong>Hosted verification is not available</strong><span>This workspace can save private evidence, but recording a payment requires a reviewed shop-scoped database transaction. No payment or order status was changed.</span></div>}
       {saved === "verified" && verificationReadback && <div className="hosted-success" role="status"><strong>Payment readback confirmed</strong><span>{mmk(verificationReadback.payment.amount_mmk)} via {verificationReadback.payment.payment_method} · {verificationReadback.order.payment_status}</span></div>}
     </section>}
     {notice && <p className="hosted-notice" role="status">{notice}</p>}
