@@ -123,8 +123,16 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
   if (!session) return null;
 
   let targetShopId = requestedShopId;
+  let isAuthorized = false;
 
-  if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
+  if (targetShopId && uuidSchema.safeParse(targetShopId).success) {
+    const mem = verifyShopMembership(session.userId, targetShopId);
+    if (mem.authorized && mem.shop) {
+      isAuthorized = true;
+    }
+  }
+
+  if (!isAuthorized) {
     try {
       const cookieStore = await cookies();
       const activeCookie = cookieStore.get("salesayar_active_shop")?.value;
@@ -132,6 +140,7 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
         const mem = verifyShopMembership(session.userId, activeCookie);
         if (mem.authorized && mem.shop) {
           targetShopId = activeCookie;
+          isAuthorized = true;
         }
       }
     } catch {
@@ -139,13 +148,14 @@ export async function getAuthorizedShopSession(requestedShopId?: string): Promis
     }
   }
 
-  if (!targetShopId || !uuidSchema.safeParse(targetShopId).success) {
+  if (!isAuthorized) {
     const shops = getUserAuthorizedShops(session.userId);
     if (shops.length === 0) return null;
-    targetShopId = shops[0]!.shop_id;
+    const liveShop = shops.find((s) => !s.is_sample) || shops[0];
+    targetShopId = liveShop!.shop_id;
   }
 
-  const membership = verifyShopMembership(session.userId, targetShopId);
+  const membership = verifyShopMembership(session.userId, targetShopId!);
   if (!membership.authorized || !membership.shop) return null;
 
   return {

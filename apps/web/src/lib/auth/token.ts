@@ -119,12 +119,23 @@ export function verifyShopMembership(
       return { authorized: false };
     }
 
-    const row = db.prepare(`
+    let row = db.prepare(`
       SELECT sm.role, s.id as shop_id, s.name as shop_name, s.currency, s.is_sample
       FROM shop_memberships sm
       JOIN shops s ON sm.shop_id = s.id
       WHERE sm.user_id = ? AND sm.shop_id = ?
     `).get(userId, shopId) as { role: string; shop_id: string; shop_name: string; currency: string; is_sample: number } | undefined;
+
+    // Self-heal on serverless cold starts or fresh container instances
+    if (!row) {
+      ensureLocalProfile({ id: userId });
+      row = db.prepare(`
+        SELECT sm.role, s.id as shop_id, s.name as shop_name, s.currency, s.is_sample
+        FROM shop_memberships sm
+        JOIN shops s ON sm.shop_id = s.id
+        WHERE sm.user_id = ? AND sm.shop_id = ?
+      `).get(userId, shopId) as { role: string; shop_id: string; shop_name: string; currency: string; is_sample: number } | undefined;
+    }
 
     if (!row) {
       return { authorized: false };

@@ -73,3 +73,16 @@ test("placeholder configuration and secret keys never enable public clients", ()
     else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = oldKey;
   }
 });
+
+test("verifyShopMembership self-heals permissions on fresh container states", async () => {
+  const { verifyShopMembership } = await import("./auth/token.ts");
+  const { deterministicShopId } = await import("./auth/local-profile.ts");
+  const testUserId = "a0000000-0000-4000-8000-000000000099";
+  const testShopId = deterministicShopId(testUserId);
+
+  const membership = verifyShopMembership(testUserId, testShopId);
+  assert.equal(membership.authorized, true);
+  assert.equal(membership.role, "owner");
+  assert.equal(membership.shop?.id, testShopId);
+});
+

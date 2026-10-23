@@ -435,7 +435,21 @@ export function SayaAssistant({
     setNotice(language === "my" ? "အော်ဒါကို ဆိုင်စာရင်းထဲသို့ သိမ်းဆည်းနေပါသည်…" : "Saving order to shop workspace…");
 
     try {
-      const targetShopId = activeShopId || shopId;
+      let targetShopId = activeShopId || shopId;
+      if (!targetShopId || targetShopId === "00000000-0000-4000-8000-000000000001") {
+        try {
+          const ctxRes = await fetch("/api/assistant/payment-context");
+          if (ctxRes.ok) {
+            const ctx = await ctxRes.json();
+            if (ctx.shop_id) {
+              targetShopId = ctx.shop_id;
+              setActiveShopId(ctx.shop_id);
+              if (ctx.shop_name) setShopName(ctx.shop_name);
+            }
+          }
+        } catch {}
+      }
+
       const payload = {
         shop_id: targetShopId,
         id: stableOrderId,

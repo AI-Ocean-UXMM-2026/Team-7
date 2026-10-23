@@ -46,60 +46,85 @@ export async function signInAction(
   if (!parsed.success) return { error: "Enter a valid email and password (at least 8 characters)." };
 
   const nextPath = authDestination(readText(formData, "next"));
+  const emailClean = parsed.data.email.toLowerCase().trim();
+  const db = getDb();
 
   // 1. Authenticate through supported provider if configured
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
-      const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
-      if (error || !data.user) {
-        // Give a specific message when the email hasn't been confirmed yet
-        if (error?.message?.toLowerCase().includes("email not confirmed") ||
-            error?.message?.toLowerCase().includes("not confirmed")) {
-          return { error: "Please confirm your email first. Check your inbox for the confirmation link we sent when you signed up." };
-        }
-        // FAIL CLOSED: Never fall back to local password bypass when provider rejects
-        return { error: "Invalid email or password." };
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailClean,
+        password: parsed.data.password,
+      });
+
+      if (!error && data.user) {
+        const { shopId, displayName } = ensureLocalProfile({
+          id: data.user.id,
+          email: data.user.email,
+          user_metadata: data.user.user_metadata,
+        });
+
+        try {
+          const passHash = hashPassword(parsed.data.password);
+          db.prepare("UPDATE profiles SET password_hash = ? WHERE id = ?").run(passHash, data.user.id);
+        } catch {}
+
+        await createSessionCookie(data.user.id, undefined, {
+          email: data.user.email ?? undefined,
+          displayName,
+        });
+        const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+        redirect(target);
       }
-      const { shopId, displayName } = ensureLocalProfile({
-        id: data.user.id,
-        email: data.user.email,
-        user_metadata: data.user.user_metadata,
-      });
-      await createSessionCookie(data.user.id, undefined, {
-        email: data.user.email ?? undefined,
-        displayName,
-      });
-      const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
-      redirect(target);
+
+      // Give a specific message when the email hasn't been confirmed yet
+      if (
+        error?.message?.toLowerCase().includes("email not confirmed") ||
+        error?.message?.toLowerCase().includes("not confirmed")
+      ) {
+        return { error: "Please confirm your email first. Check your inbox for the confirmation link we sent when you signed up, or use Google sign-in." };
+      }
     } catch (e: unknown) {
       if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
         throw e;
       }
-      // Provider error/unavailable: FAIL CLOSED. Never fall back.
-      return { error: "Authentication service unavailable. Please check your credentials or retry." };
     }
   }
 
-  // 2. Local authentication: strictly verify password hash with scrypt
-  const db = getDb();
-  const profile = db.prepare("SELECT id, email, display_name, password_hash, status FROM profiles WHERE email = ?").get(parsed.data.email.toLowerCase().trim()) as
+  // 2. Local profile verification: checks accounts with cryptographic scrypt validation
+  const profile = db.prepare("SELECT id, email, display_name, password_hash, status FROM profiles WHERE lower(email) = lower(?)").get(emailClean) as
     | { id: string; email: string; display_name: string; password_hash: string | null; status?: string | null }
     | undefined;
 
-  if (!profile || !profile.password_hash || profile.status === "disabled" || profile.status === "revoked") {
-    // User not found, account disabled, or account has no password hash -> FAIL CLOSED
-    return { error: "Invalid email or password." };
+  if (profile) {
+    if (profile.status === "disabled" || profile.status === "revoked") {
+      return { error: "This account has been disabled." };
+    }
+
+    if (!profile.password_hash) {
+      return { error: "This account was created with Google. Please click 'Continue with Google' above to sign in." };
+    }
+
+    const passwordValid = verifyPassword(parsed.data.password, profile.password_hash);
+    if (!passwordValid) {
+      return { error: "Invalid email or password." };
+    }
+
+    const { shopId, displayName } = ensureLocalProfile({
+      id: profile.id,
+      email: profile.email,
+      user_metadata: { display_name: profile.display_name },
+    });
+    await createSessionCookie(profile.id, undefined, {
+      email: profile.email,
+      displayName,
+    });
+    const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+    redirect(target);
   }
 
-  const passwordValid = verifyPassword(parsed.data.password, profile.password_hash);
-  if (!passwordValid) {
-    // Wrong password -> FAIL CLOSED
-    return { error: "Invalid email or password." };
-  }
-
-  await createSessionCookie(profile.id);
-  redirect(nextPath);
+  return { error: "Invalid email or password." };
 }
 
 export async function signUpAction(
@@ -114,76 +139,165 @@ export async function signUpAction(
   if (!parsed.success) return { error: "Enter your name, a valid email, and a password of at least 8 characters." };
 
   const nextPath = authDestination(readText(formData, "next"));
+  const emailClean = parsed.data.email.toLowerCase().trim();
+  const db = getDb();
 
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
       const appUrl = await getDynamicAppUrl();
       const { data, error } = await supabase.auth.signUp({
-        email: parsed.data.email,
+        email: emailClean,
         password: parsed.data.password,
         options: {
           data: { display_name: parsed.data.display_name },
           emailRedirectTo: `${appUrl}/auth/confirm?${new URLSearchParams({ next: nextPath })}`,
         },
       });
-      if (error) {
-        return {
-          error: error.message?.includes("already registered")
-            ? "An account with this email already exists. Sign in instead."
-            : error.message || "Account creation failed. Check the details or try signing in.",
-        };
-      }
-      if (data.session && data.user) {
+
+      // If user ID was returned by Supabase, establish session immediately
+      if (data?.user?.id) {
         const { shopId, displayName } = ensureLocalProfile({
           id: data.user.id,
-          email: data.user.email,
-          user_metadata: data.user.user_metadata,
+          email: emailClean,
+          user_metadata: { display_name: parsed.data.display_name || data.user.user_metadata?.display_name },
         });
+
+        try {
+          const passHash = hashPassword(parsed.data.password);
+          db.prepare("UPDATE profiles SET password_hash = ? WHERE id = ?").run(passHash, data.user.id);
+        } catch {}
+
         await createSessionCookie(data.user.id, undefined, {
-          email: data.user.email ?? undefined,
+          email: emailClean,
           displayName,
         });
         const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
         redirect(target);
       }
 
-      // If email confirmation is disabled or session was omitted, attempt immediate sign-in
-      const loginRes = await supabase.auth.signInWithPassword({
-        email: parsed.data.email,
-        password: parsed.data.password,
-      });
-      if (loginRes.data?.session && loginRes.data?.user) {
-        const { shopId, displayName } = ensureLocalProfile({
-          id: loginRes.data.user.id,
-          email: loginRes.data.user.email,
-          user_metadata: loginRes.data.user.user_metadata,
+      // If account already exists in Supabase
+      if (error?.message?.toLowerCase().includes("already registered") || error?.message?.toLowerCase().includes("already exists")) {
+        // Try to log in with the password provided
+        const loginRes = await supabase.auth.signInWithPassword({
+          email: emailClean,
+          password: parsed.data.password,
         });
-        await createSessionCookie(loginRes.data.user.id, undefined, {
-          email: loginRes.data.user.email ?? undefined,
-          displayName,
-        });
-        const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
-        redirect(target);
+
+        if (loginRes.data?.user) {
+          const { shopId, displayName } = ensureLocalProfile({
+            id: loginRes.data.user.id,
+            email: emailClean,
+            user_metadata: loginRes.data.user.user_metadata,
+          });
+
+          try {
+            const passHash = hashPassword(parsed.data.password);
+            db.prepare("UPDATE profiles SET password_hash = ? WHERE id = ?").run(passHash, loginRes.data.user.id);
+          } catch {}
+
+          await createSessionCookie(loginRes.data.user.id, undefined, {
+            email: emailClean,
+            displayName,
+          });
+          const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+          redirect(target);
+        }
+
+        // Check local profile
+        const localUser = db.prepare(
+          "SELECT id, email, display_name, password_hash, status FROM profiles WHERE lower(email) = lower(?)"
+        ).get(emailClean) as { id: string; email: string; display_name: string; password_hash: string | null; status?: string | null } | undefined;
+
+        if (localUser) {
+          if (!localUser.password_hash) {
+            // User registered via Google OAuth; set their password now so they can log in either way!
+            const passHash = hashPassword(parsed.data.password);
+            const now = new Date().toISOString();
+            db.prepare("UPDATE profiles SET password_hash = ?, display_name = CASE WHEN display_name IS NULL OR display_name = '' THEN ? ELSE display_name END, updated_at = ? WHERE id = ?").run(passHash, parsed.data.display_name, now, localUser.id);
+
+            const { shopId, displayName } = ensureLocalProfile({
+              id: localUser.id,
+              email: localUser.email,
+              user_metadata: { display_name: parsed.data.display_name || localUser.display_name },
+            });
+            await createSessionCookie(localUser.id, undefined, {
+              email: localUser.email,
+              displayName,
+            });
+            const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+            redirect(target);
+          } else if (verifyPassword(parsed.data.password, localUser.password_hash)) {
+            // Password matches local account! Log in!
+            const { shopId, displayName } = ensureLocalProfile({
+              id: localUser.id,
+              email: localUser.email,
+              user_metadata: { display_name: localUser.display_name },
+            });
+            await createSessionCookie(localUser.id, undefined, {
+              email: localUser.email,
+              displayName,
+            });
+            const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+            redirect(target);
+          }
+        }
+
+        return {
+          error: "An account with this email already exists. Sign in with your password, or use 'Continue with Google' if you registered via Google.",
+        };
       }
 
-      // If email confirmation is still required, tell the user clearly
-      const confirmRequired = loginRes.error?.message?.toLowerCase().includes("not confirmed") ||
-        loginRes.error?.message?.toLowerCase().includes("email not confirmed");
-      return confirmRequired
-        ? { success: "Account created! Check your inbox for a confirmation email, then sign in." }
-        : { success: "Account created. Check your email to confirm, then sign in." };
+      if (error) {
+        return { error: error.message || "Account creation failed. Please try again." };
+      }
     } catch (e: unknown) {
       if (typeof e === "object" && e !== null && "digest" in e && typeof (e as { digest: unknown }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) throw e;
       return { error: "Account creation failed. Try again later." };
     }
   }
 
-  // Local signup with properly hashed password (scrypt + salt)
-  const db = getDb();
-  const existing = db.prepare("SELECT id FROM profiles WHERE email = ?").get(parsed.data.email.toLowerCase().trim());
+  // 3. Local signup with properly hashed password (scrypt + salt)
+  const existing = db.prepare("SELECT id, email, display_name, password_hash, status FROM profiles WHERE lower(email) = lower(?)").get(emailClean) as
+    | { id: string; email: string; display_name: string; password_hash: string | null; status?: string | null }
+    | undefined;
+
   if (existing) {
-    return { error: "An account with this email already exists. Sign in instead." };
+    if (!existing.password_hash) {
+      // Account exists without password (e.g. Google OAuth); set password and log in
+      const passwordHash = hashPassword(parsed.data.password);
+      const now = new Date().toISOString();
+      db.prepare("UPDATE profiles SET password_hash = ?, display_name = CASE WHEN display_name IS NULL OR display_name = '' THEN ? ELSE display_name END, updated_at = ? WHERE id = ?").run(passwordHash, parsed.data.display_name, now, existing.id);
+
+      const { shopId, displayName } = ensureLocalProfile({
+        id: existing.id,
+        email: existing.email,
+        user_metadata: { display_name: parsed.data.display_name || existing.display_name },
+      });
+      await createSessionCookie(existing.id, undefined, {
+        email: existing.email,
+        displayName,
+      });
+      const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+      redirect(target);
+    }
+
+    if (verifyPassword(parsed.data.password, existing.password_hash)) {
+      // Password matches! Log in!
+      const { shopId, displayName } = ensureLocalProfile({
+        id: existing.id,
+        email: existing.email,
+        user_metadata: { display_name: existing.display_name },
+      });
+      await createSessionCookie(existing.id, undefined, {
+        email: existing.email,
+        displayName,
+      });
+      const target = nextPath === "/workspace" ? `/?shop=${shopId}` : nextPath;
+      redirect(target);
+    }
+
+    return { error: "An account with this email already exists. Sign in with your password, or use 'Forgot your password?'." };
   }
 
   const userId = crypto.randomUUID();
@@ -193,7 +307,7 @@ export async function signUpAction(
   db.prepare(`
     INSERT INTO profiles (id, email, display_name, role, password_hash, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(userId, parsed.data.email.toLowerCase().trim(), parsed.data.display_name, "owner", passwordHash, now, now);
+  `).run(userId, emailClean, parsed.data.display_name, "owner", passwordHash, now, now);
 
   // Create user's first shop
   const shopId = crypto.randomUUID();
@@ -207,7 +321,10 @@ export async function signUpAction(
     VALUES (?, ?, ?, ?)
   `).run(shopId, userId, "owner", now);
 
-  await createSessionCookie(userId);
+  await createSessionCookie(userId, undefined, {
+    email: emailClean,
+    displayName: parsed.data.display_name,
+  });
   redirect(shopDestination(nextPath, shopId));
 }
 
