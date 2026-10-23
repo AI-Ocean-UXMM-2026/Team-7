@@ -378,9 +378,10 @@ export function OrderDrawer({ shopId, order, savedNotice, close, saved, readOnly
                 close();
                 window.dispatchEvent(
                   new CustomEvent("open-saya-assistant", {
-                    detail: { view: "match", orderId: order.id },
+                    detail: { view: "match", orderId: order.id, shopId },
                   })
                 );
+
               }}
             >
               {language === "my" ? "ငွေလွှဲစလစ် စစ်ဆေးအတည်ပြုမည် →" : "Verify Payment Slip →"}

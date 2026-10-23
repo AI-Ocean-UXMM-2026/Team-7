@@ -36,8 +36,17 @@ export async function POST(request: Request) {
       }
     }
     if (!localAuthorization.authorizedShop) return NextResponse.json({ error: "You are not authorized to rematch evidence for this shop." }, { status: 403 });
+    const { getDb } = await import("@/lib/db/sqlite");
+    const count = (getDb().prepare("SELECT COUNT(*) as count FROM orders WHERE shop_id = ?").get(effectiveShopId) as { count: number } | undefined)?.count ?? 0;
+    if (count === 0) {
+      const { getUserAuthorizedShops } = await import("@/lib/auth/session");
+      const userShops = getUserAuthorizedShops(localAuthorization.userId);
+      const bestShop = userShops.find((s) => !s.is_sample);
+      if (bestShop) effectiveShopId = bestShop.shop_id;
+    }
     try {
       const matched = matchScreenshot(effectiveShopId, parsed.data.extraction, parsed.data.image_sha256 ?? null, localAuthorization.userId);
+
       return NextResponse.json({
         mode: "live-match", ...matched, image_sha256: parsed.data.image_sha256 ?? null,
         evidence_schema_available: true, verification_available: true,

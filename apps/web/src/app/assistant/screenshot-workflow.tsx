@@ -51,7 +51,15 @@ function extractError(body: unknown, fallback: string) {
   return body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : fallback;
 }
 
-export function ScreenshotToOrderWorkflow({ shopId, resumeEvidenceId }: { shopId: string; resumeEvidenceId?: string | null }) {
+export function ScreenshotToOrderWorkflow({
+  shopId,
+  resumeEvidenceId,
+  initialOrderId,
+}: {
+  shopId: string;
+  resumeEvidenceId?: string | null;
+  initialOrderId?: string | null;
+}) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
@@ -61,7 +69,8 @@ export function ScreenshotToOrderWorkflow({ shopId, resumeEvidenceId }: { shopId
   const [originalExtraction, setOriginalExtraction] = useState<ScreenshotExtraction>(emptyExtraction);
   const [extraction, setExtraction] = useState<ScreenshotExtraction>(emptyExtraction);
   const [candidates, setCandidates] = useState<ScreenshotCandidate[]>([]);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId ?? null);
+
   const [evidenceId, setEvidenceId] = useState("");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -137,7 +146,72 @@ export function ScreenshotToOrderWorkflow({ shopId, resumeEvidenceId }: { shopId
     return () => { active = false; };
   }, [resumeEvidenceId, shopId]);
 
+  useEffect(() => {
+    if (!initialOrderId || resumeEvidenceId) return;
+    let active = true;
+    async function loadInitialOrder() {
+      try {
+        const res = await fetch(`/api/orders?shop=${encodeURIComponent(shopId)}`, { credentials: "same-origin" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { orders?: Array<Record<string, unknown>> };
+        const found = data.orders?.find((o) => o.id === initialOrderId) as {
+          id: string;
+          total_mmk: number;
+          order_status: "draft" | "confirmed" | "completed" | "cancelled";
+          payment_status: "unpaid" | "partially_paid" | "paid" | "refunded";
+          fulfillment_status?: "unfulfilled" | "processing" | "shipped" | "delivered" | "cancelled";
+          customers?: { name?: string | null; phone?: string | null } | null;
+        } | undefined;
+        if (found && active) {
+          setSelectedOrderId(found.id);
+          const initialExt: ScreenshotExtraction = {
+            ...emptyExtraction,
+            amount_mmk: found.total_mmk,
+            payer_name: found.customers?.name ?? null,
+            missing_fields: ["transaction_reference", "provider", "transaction_date", "transaction_time", "payee_name", "payee_account"],
+          };
+          setExtraction(initialExt);
+          setOriginalExtraction(initialExt);
+          const isEligible = found.payment_status === "unpaid" || found.payment_status === "partially_paid";
+          const candidate: ScreenshotCandidate = {
+            order_id: found.id,
+            customer_name: found.customers?.name ?? null,
+            customer_phone: found.customers?.phone ?? null,
+            total_mmk: found.total_mmk,
+            order_status: (found.order_status === "completed" ? "confirmed" : found.order_status) as "draft" | "confirmed" | "cancelled",
+            payment_status: found.payment_status,
+            fulfillment_status: found.fulfillment_status ?? "unfulfilled",
+            eligible: isEligible,
+            match_state: isEligible ? "exact" : "ineligible",
+            amount_relation: "exact",
+            customer_relation: "match",
+            reference_relation: "unavailable",
+            reasons: ["Target order selected for payment verification."],
+            duplicate_warning: null,
+          };
+          setCandidates([candidate]);
+          setAnalysis({
+            mode: "manual",
+            extraction: initialExt,
+            candidates: [candidate],
+            duplicate_warnings: [],
+            image_sha256: null,
+            evidence_schema_available: true,
+            verification_available: true,
+            message: `Order #${found.id.slice(0, 8).toUpperCase()} attached. Verify funds from your bank or merchant record.`,
+          });
+          setNotice(`Order #${found.id.slice(0, 8).toUpperCase()} attached for payment verification.`);
+        }
+      } catch {
+        // Non-critical auto-attachment fallback
+      }
+    }
+    void loadInitialOrder();
+    return () => { active = false; };
+  }, [initialOrderId, resumeEvidenceId, shopId]);
+
   function resetForFile(nextFile: File) {
+
     if (preview) URL.revokeObjectURL(preview);
     setFile(nextFile);
     setPreview(URL.createObjectURL(nextFile));

@@ -5,7 +5,7 @@ import {
 import { type ExistingPaymentEvidence, type MatchableOrder } from "@ocean/core";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { getCurrentSession, verifyShopMembership } from "@/lib/auth/session";
+import { getCurrentSession, verifyShopMembership, getUserAuthorizedShops } from "@/lib/auth/session";
 import { completeMatchScope, MATCH_CONTEXT_LIMIT } from "./screenshot-scope";
 
 export type ScreenshotDbClient = Awaited<ReturnType<typeof createClient>>;
@@ -22,12 +22,22 @@ export type LocalScreenshotAuthorization =
 export async function authorizeLocalScreenshotShop(shopId: string): Promise<LocalScreenshotAuthorization> {
   const session = await getCurrentSession();
   if (!session) return { sessionPresent: false };
+  const directMembership = verifyShopMembership(session.userId, shopId);
+  if (directMembership.authorized) {
+    return {
+      sessionPresent: true,
+      authorizedShop: true,
+      userId: session.userId,
+    };
+  }
+  const shops = getUserAuthorizedShops(session.userId);
   return {
     sessionPresent: true,
-    authorizedShop: verifyShopMembership(session.userId, shopId).authorized,
+    authorizedShop: shops.length > 0,
     userId: session.userId,
   };
 }
+
 
 export async function authorizeScreenshotShop(shopId: string): Promise<AuthorizationResult> {
   if (!isSupabaseConfigured()) return { available: false };

@@ -83,6 +83,7 @@ export default async function SalesPage({
         <VouchersView orders={orders} />
       ) : (
         <PaymentsView
+          shopId={shopId}
           payments={payments}
           orders={orders}
           evidenceReviews={evidenceReviews}

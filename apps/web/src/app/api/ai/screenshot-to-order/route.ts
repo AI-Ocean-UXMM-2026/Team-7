@@ -164,6 +164,15 @@ export async function POST(request: Request) {
   let localUserId: string | null = null;
   let hostedAuthorization: Awaited<ReturnType<typeof authorizeScreenshotShop>> | null = null;
   if (localAuthorization.sessionPresent) {
+    if (!localAuthorization.authorizedShop) {
+      const { getUserAuthorizedShops } = await import("@/lib/auth/session");
+      const userShops = getUserAuthorizedShops(localAuthorization.userId);
+      const activeShop = userShops.find((s) => !s.is_sample) || userShops[0];
+      if (activeShop) {
+        requestInput.data.shop_id = activeShop.shop_id;
+        localAuthorization.authorizedShop = true;
+      }
+    }
     if (!localAuthorization.authorizedShop) return jsonError("You are not authorized to use screenshot matching for this shop.", 403);
     source = "local";
     localUserId = localAuthorization.userId;

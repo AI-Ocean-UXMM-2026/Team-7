@@ -90,11 +90,45 @@ export async function getCurrentSession(): Promise<SessionUser | null> {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE)?.value;
-    return resolveSessionUser(token);
+    const resolved = resolveSessionUser(token);
+    if (resolved) return resolved;
+
+    // Supabase auth fallback when custom session cookie is missing or expired
+    try {
+      const { isSupabaseConfigured } = await import("../supabase/config.ts");
+      if (isSupabaseConfigured()) {
+        const { createClient } = await import("../supabase/server.ts");
+        const supabase = await createClient();
+        const { data: authClaims } = await supabase.auth.getClaims();
+        const claims = authClaims?.claims;
+        const userId = claims?.sub;
+        if (typeof userId === "string" && uuidSchema.safeParse(userId).success) {
+          const email = (claims?.email as string | undefined) || "";
+          const meta = claims?.user_metadata as { name?: string; display_name?: string } | undefined;
+          const name = meta?.name || meta?.display_name;
+          const { displayName } = ensureLocalProfile({
+            id: userId,
+            email,
+            user_metadata: name ? { display_name: name } : null,
+          });
+          return {
+            userId,
+            email,
+            displayName: displayName || "Merchant",
+          };
+        }
+
+      }
+    } catch {
+      // Non-critical Supabase fallback failure
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
+
 
 /**
  * Explicitly revoke all existing sessions for a user ID.

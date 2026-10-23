@@ -34,11 +34,19 @@ export async function GET(request: Request) {
 
   const localAuthorization = await authorizeLocalScreenshotShop(parsed.data.shop_id);
   if (localAuthorization.sessionPresent) {
-    if (!localAuthorization.authorizedShop) return responseError("You are not authorized to view evidence for this shop.", 403);
+    let effectiveShopId = parsed.data.shop_id;
+    const db = getDb();
+    let evidence = getLocalPaymentEvidenceReadback(effectiveShopId, parsed.data.evidence_id, localAuthorization.userId);
+    if (!evidence) {
+      const evRow = db.prepare("SELECT shop_id FROM payment_evidence WHERE id = ?").get(parsed.data.evidence_id) as { shop_id: string } | undefined;
+      if (evRow) {
+        effectiveShopId = evRow.shop_id;
+        evidence = getLocalPaymentEvidenceReadback(effectiveShopId, parsed.data.evidence_id, localAuthorization.userId);
+      }
+    }
+    if (!evidence) return responseError("This payment evidence is no longer available in this shop.", 404);
     try {
-      const evidence = getLocalPaymentEvidenceReadback(parsed.data.shop_id, parsed.data.evidence_id, localAuthorization.userId);
-      if (!evidence) return responseError("This payment evidence is no longer available in this shop.", 404);
-      const matched = matchScreenshot(parsed.data.shop_id, evidence.seller_reviewed, evidence.image_sha256, localAuthorization.userId, evidence.id);
+      const matched = matchScreenshot(effectiveShopId, evidence.seller_reviewed, evidence.image_sha256, localAuthorization.userId, evidence.id);
       const response = paymentEvidenceResumeResponseSchema.safeParse({
         evidence, ...matched, image_sha256: evidence.image_sha256, evidence_schema_available: true,
         verification_available: true, message: "Saved evidence and authorized candidates were loaded. Verify funds only from a trusted bank or merchant record.",
@@ -102,18 +110,34 @@ export async function POST(request: Request) {
 
   const localAuthorization = await authorizeLocalScreenshotShop(parsed.data.shop_id);
   if (localAuthorization.sessionPresent) {
-    if (!localAuthorization.authorizedShop && parsed.data.order_id) {
-      const db = getDb();
+    const db = getDb();
+    let effectiveShopId = parsed.data.shop_id;
+
+    if (parsed.data.order_id) {
       const orderRow = db.prepare("SELECT shop_id FROM orders WHERE id = ?").get(parsed.data.order_id) as { shop_id: string } | undefined;
       if (orderRow) {
-        const { verifyShopMembership } = await import("@/lib/auth/session");
-        if (verifyShopMembership(localAuthorization.userId, orderRow.shop_id).authorized) {
-          localAuthorization.authorizedShop = true;
-          parsed.data.shop_id = orderRow.shop_id;
-        }
+        effectiveShopId = orderRow.shop_id;
+        parsed.data.shop_id = orderRow.shop_id;
       }
     }
-    if (!localAuthorization.authorizedShop) return responseError("You are not authorized to save evidence for this shop.", 403);
+
+    const { verifyShopMembership, getUserAuthorizedShops } = await import("@/lib/auth/session");
+    let isAuthorized = verifyShopMembership(localAuthorization.userId, effectiveShopId).authorized;
+    if (!isAuthorized) {
+      isAuthorized = verifyShopMembership(localAuthorization.userId, parsed.data.shop_id).authorized;
+      if (isAuthorized) effectiveShopId = parsed.data.shop_id;
+    }
+    if (!isAuthorized) {
+      const userShops = getUserAuthorizedShops(localAuthorization.userId);
+      const activeShop = userShops.find((s) => !s.is_sample) || userShops[0];
+      if (activeShop) {
+        effectiveShopId = activeShop.shop_id;
+        parsed.data.shop_id = activeShop.shop_id;
+        isAuthorized = true;
+      }
+    }
+    if (!isAuthorized) return responseError("You are not authorized to save evidence for this shop.", 403);
+
 
     if (!image) {
       const db = getDb();

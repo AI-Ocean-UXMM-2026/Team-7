@@ -22,6 +22,7 @@ export interface PaymentItem {
 
 export interface PaymentEvidenceItem {
   id: string;
+  shop_id?: string;
   order_id: string | null;
   status: "pending_review" | "rejected" | "verified";
   seller_reviewed: ScreenshotExtraction | null;
@@ -38,12 +39,14 @@ export function PaymentsView({
   payments,
   orders,
   evidenceReviews = [],
+  shopId,
   currentShopName,
   otherShops = [],
 }: {
   payments: PaymentItem[];
   orders: OrderDetails[];
   evidenceReviews?: PaymentEvidenceItem[];
+  shopId?: string;
   currentShopName?: string;
   otherShops?: Array<{ shop_id: string; name: string }>;
 }) {
@@ -225,7 +228,8 @@ export function PaymentsView({
                     <button
                       className="hosted-secondary-button"
                       type="button"
-                      onClick={() => window.dispatchEvent(new CustomEvent("open-saya-assistant", { detail: { view: "match", evidenceId: evidence.id } }))}
+                      onClick={() => window.dispatchEvent(new CustomEvent("open-saya-assistant", { detail: { view: "match", evidenceId: evidence.id, shopId: evidence.shop_id || shopId, orderId: evidence.order_id ?? undefined } }))}
+
                     >
                       {!evidence.order_id
                         ? (isBurmese ? "အော်ဒါချိတ်ဆက်ပြီး စစ်ဆေးရန်" : "Attach order & review")

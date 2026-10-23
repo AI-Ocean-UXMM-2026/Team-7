@@ -220,9 +220,10 @@ export function VoucherModal({
                   onClose();
                   window.dispatchEvent(
                     new CustomEvent("open-saya-assistant", {
-                      detail: { view: "match", orderId: order.id },
+                      detail: { view: "match", orderId: order.id, shopId: order.shop_id },
                     })
                   );
+
                 }}
               >
                 {isBurmese ? "စလစ်စစ်ဆေးမည် →" : "Verify Slip →"}

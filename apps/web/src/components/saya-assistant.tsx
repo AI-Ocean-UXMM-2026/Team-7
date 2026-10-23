@@ -131,6 +131,7 @@ export function SayaAssistant({
   const [isOpen, setIsOpen] = useState(false);
   const [view, setView] = useState<View>("home");
   const [resumeEvidenceId, setResumeEvidenceId] = useState<string | null>(null);
+  const [targetOrderId, setTargetOrderId] = useState<string | null>(null);
 
   const { language, setLanguage } = useShellLanguage();
   const t = ASSISTANT_STRINGS[language] || ASSISTANT_STRINGS.en;
@@ -156,7 +157,8 @@ export function SayaAssistant({
   // Keep active shop in sync via payment-context
   useEffect(() => {
     let active = true;
-    const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : "";
+    const target = shopId || activeShopId;
+    const q = target ? `?shop_id=${encodeURIComponent(target)}` : "";
     fetch(`/api/assistant/payment-context${q}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -183,18 +185,21 @@ export function SayaAssistant({
     setShowAppendWrite(false);
     setAppendInput("");
     setNotice("");
+    setTargetOrderId(null);
   }, []);
 
   // Listen for open events triggered by topbar / banner buttons
   useEffect(() => {
     const handleOpen = (e: Event) => {
       setIsOpen(true);
-      const detail = (e as CustomEvent<{ view?: View; evidenceId?: string; reset?: boolean }>).detail;
+      const detail = (e as CustomEvent<{ view?: View; evidenceId?: string; reset?: boolean; orderId?: string; shopId?: string }>).detail;
       if (detail?.reset) {
         resetOrderState();
       }
       if (detail?.view) setView(detail.view);
       setResumeEvidenceId(detail?.evidenceId ?? null);
+      if (detail?.orderId) setTargetOrderId(detail.orderId);
+      if (detail?.shopId) setActiveShopId(detail.shopId);
     };
     window.addEventListener("open-saya-assistant", handleOpen);
     return () => window.removeEventListener("open-saya-assistant", handleOpen);
@@ -1132,11 +1137,13 @@ export function SayaAssistant({
                   /* SCREENSHOT TO ORDER MATCH VIEW */
                   <section className="workflow" aria-label="Match Payment to Order">
                     <ScreenshotToOrderWorkflow
-                      key={resumeEvidenceId ?? "web-match"}
-                      shopId={shopId}
+                      key={`${activeShopId}-${resumeEvidenceId ?? targetOrderId ?? "web-match"}`}
+                      shopId={activeShopId}
                       resumeEvidenceId={resumeEvidenceId}
+                      initialOrderId={targetOrderId}
                     />
                   </section>
+
                 )}
               </>
             )}
